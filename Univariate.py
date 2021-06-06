@@ -1635,7 +1635,7 @@ class Descriptive(UnivariateOutliers, DescStatsPlot):
        
             # Univariate Outliers (exclude "gesd").
             Outs = UnivariateOutliers(methods=self.methods).fit(X[[var]])
-            Outs = Outs.info.to_dict(orient="record")[0]
+            Outs = Outs.info.to_dict('record')[0]
             Outs = dict([(key, Outs[key]) for key in num_fields[-4:]])
             
             desc = dict([("variable", var),
