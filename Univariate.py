@@ -388,7 +388,7 @@ def __ContDist__(dist):
         return dist, {'args':dist.args,'kwds':dist.kwds}, dname
     else: return dist, None, dist.__dict__['name']
 
-def __quantiles__(x:nd.array, bins:int=10):
+def __quantiles__(x:np.ndarray, bins:int=10):
     
     '''Create quantile bins'''
     q = np.linspace(0, 100, bins+1)
@@ -568,7 +568,8 @@ class MatchDist():
         # Convert `X` to pd.DataFrame
         X0 = _to_DataFrame(X).copy()
         usecols, not_num, min_num = __Valid__(X0)
-        X0 = X0[usecols].values.astype(float)
+        self.X = X0[usecols].copy()
+        X0 = self.X.values.astype(float).copy()
         self.exclude = {'non_numeric':not_num,
                         'min_numeric':min_num}
            
@@ -714,6 +715,42 @@ class MatchDist():
 
             self.hist[key] = density(*attrs.values())
 
+            
+    def plotting(self, var:str, ax=None):
+    
+        '''
+        Function to plot PDF.
+        
+        Parameters
+        ----------
+        var : str
+            Variable name in X.
+
+        ax : Matplotlib axis, default=None
+            If None, `matplotlib.pyplot.axes` is created with 
+            default figsize=(6,3.8).
+        
+        '''
+        kwds = {'chi2' : dict(lw=1.5, marker='o', c='#ee5253', fillstyle='none'),
+                'ks'   : dict(lw=1.5, marker='s', c='#2e86de', fillstyle='none'),
+                'qq'   : dict(lw=1.5, marker='D', c='#10ac84', fillstyle='none'),
+                'hist' : dict(color='#c8d6e5', alpha=0.5)}
+        
+        if ax is None: 
+            ax = plt.subplots(figsize=(6,3.8))[1]
+
+        for fld in self.hist[var]._fields:
+            r = getattr(self.hist[var], fld)
+            kwargs = {**{'label':r.label},**kwds[fld]}
+            if fld=='hist':
+                x = self.X.loc[self.X[var].notna(),var].values
+                ax.hist(x, bins=r.x, **kwargs)
+            else: ax.plot(r.x, r.y, **kwargs)
+
+        ax.legend(loc='best', framealpha=0)
+        ax.set_title(var, fontsize=14, fontweight ="bold")
+        ax.set_ylabel('Numer of Counts', fontweight ="bold")
+           
 class UnivariateOutliers():
       
     '''
@@ -1302,7 +1339,7 @@ class DescStatsPlot():
         var : str
             Variable name in X.
 
-        ax : Matplotlib axis
+        ax : Matplotlib axis, default=None
             If None, `matplotlib.pyplot.axes` is created with 
             default figsize=(8,3.8).
             
@@ -1355,7 +1392,7 @@ class DescStatsPlot():
 
         for (fld,s,k0,k1) in criteria:
             x = getattr(dStats, fld)
-            y = __rescale__(pdf, hist, kernel.pdf(x))
+            y = self.__rescale__(pdf, hist, kernel.pdf(x))
             ax.plot((x,)*2, [0,y], **kwargs[k1])
             ax.annotate(s, (x, y/2), **{**kwargs[k0],
                                         **{'color':kwargs[k1]["color"]}})
@@ -1401,11 +1438,13 @@ class DescStatsPlot():
                  ("Skewness", "f_skewness"), ("Kurtosis", "kurtosis"), 
                  ("Min", "min"), ("25%", "pct25"), ("50%", "pct50"), 
                  ("75%", "pct75"), ("Max", "max")]
-
-        s  = ['{} = {}'.format(t0, GetVals(t1)) for t0,t1 in text0]
+        
+        s  = ['Count = ' + __numfmt__(self.X.shape[0])]
+        s += ['{} = {}'.format(t0, GetVals(t1)) for t0,t1 in text0]
         s += ['{} = {} ({})'.format(t0, GetVals(t1), GetVals(t2)) 
               for t0,t1,t2 in [("Lower","lower","n_lower"),
                                ("Upper","upper","n_upper")]]
+        
         ax.text(1.03, 1, '\n'.join(tuple(s)), transform=ax.transAxes, 
                 fontsize=12, va='top', ha='left')
 
