@@ -1392,7 +1392,7 @@ class DescStatsPlot():
 
         for (fld,s,k0,k1) in criteria:
             x = getattr(dStats, fld)
-            y = self.__rescale__(pdf, hist, kernel.pdf(x))
+            y = self.__rescale__(pdf, hist, kernel.pdf(x))[0]
             ax.plot((x,)*2, [0,y], **kwargs[k1])
             ax.annotate(s, (x, y/2), **{**kwargs[k0],
                                         **{'color':kwargs[k1]["color"]}})
