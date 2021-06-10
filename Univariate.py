@@ -1288,12 +1288,26 @@ class DescStatsPlot():
     
     use_hist : bool, default=False
         If True, <ax.hist> is used, otherwise <ax.fill_between>.
+        Not available when y is provided.
         
     bins : int or sequence of scalars or str, default=None
         `bins` defines the method used to calculate the optimal 
         bin width, as defined by <numpy.histogram>. If None, it
         defaults to "fd".
         
+    show_vline : bool, default=True
+        If True, it shows 4 vertical lines across the Axes i.e.
+        1st quartile, 2nd quartile, 3rd quartile, and mean. 
+        Not available when y is provided.
+
+    show_bound : bool, default=True
+        If True, it shows lower and upper bounds of outliers.
+        Not available when y is provided.
+        
+    show_stats : bool, default=True
+        If True, it shows decriptive statistics on the side of 
+        the plot. 
+            
     References
     ----------
     .. [1] https://docs.scipy.org/doc/scipy/reference/generated/
@@ -1320,16 +1334,24 @@ class DescStatsPlot():
     >>> plt.show()
     
     '''
-    def __init__(self, X, num_info, bins = None, bw_method = 0.1, 
-                 use_hist = False):
-        
+    def __init__(self, X, num_info, 
+                 bins = None, 
+                 bw_method = 0.1, 
+                 use_hist = False, 
+                 show_vline = True, 
+                 show_stats = True, 
+                 show_bound = True):
+
         self.X = X.copy()
         self.num_info = num_info
         self.bins = "fd" if bins is None else bins
         self.bw_method = bw_method
         self.use_hist = use_hist
+        self.show_vline = show_vline 
+        self.show_stats = show_stats
+        self.show_bound = show_bound
     
-    def plotting(self, var, ax=None, xlim=None):
+    def plotting(self, var, ax=None, xlim=None, y=None):
         
         '''
         Plot histogram
@@ -1345,7 +1367,10 @@ class DescStatsPlot():
             
         xlim : tuple(float,float), default=None
             It is the x-axis view limits (left,right), If None, 
-            it leaves the limit unchanged. 
+            it leaves the limit unchanged.
+            
+        y : array-like of shape X.shape[0], default=None
+        \t An array of labels (int).
             
         '''
         if ax is None: 
@@ -1353,15 +1378,20 @@ class DescStatsPlot():
             
         dStats = self.num_info[var]
         x = self.X.loc[self.X[var].notna(), var].values.copy()
-        self.__histpdf__(ax, x, dStats, self.bins, 
-                         self.bw_method, self.use_hist)
-        self.__axvline__(ax, dStats)
-        self.__decstat__(ax, dStats)
+        if y is None:
+            self.__histpdf__(ax, x, dStats, self.bins, 
+                             self.bw_method, self.use_hist)
+            if self.show_bound: self.__axvline__(ax, dStats)
+        else:
+            nonan = np.array(y)[self.X[var].notna()].copy()
+            self.__yhistpdf__(ax, x, nonan, var, self.bw_method)
+        
+        if self.show_stats: self.__decstat__(ax, dStats)
         ax.set_title(var, fontsize=14, fontweight ="bold")
         if isinstance(xlim, tuple): ax.set_xlim(*xlim)
             
-    def __histpdf__(self, ax, x, dStats, bins = "fd",
-                    bw_method = 0.1, use_hist = False):
+    def __histpdf__(self, ax, x, dStats, bins="fd",
+                    bw_method=0.1, use_hist=False):
 
         '''Probability Desnsity Function'''
         kwargs = {"hist"  : dict(color="#d1d8e0", bins=bins, alpha=0.5), 
@@ -1384,21 +1414,55 @@ class DescStatsPlot():
         ax.plot(unq_x, y, **kwargs['kde'])
         if use_hist: ax.hist(x, **kwargs['hist'])
         else: ax.fill_between(unq_x, y, color="#d1d8e0")
+        
+        if self.show_vline:
+            criteria = [("pct25", r"$Q_{1}$", "left" , "quant"),
+                        ("pct50", r"$Q_{2}$", "right", "quant"),
+                        ("pct75", r"$Q_{3}$", "right", "quant"),
+                        ("mean" , r"$\mu$"  , "left" , "mean" )]
 
-        criteria = [("pct25", r"$Q_{1}$", "left" , "quant"),
-                    ("pct50", r"$Q_{2}$", "right", "quant"),
-                    ("pct75", r"$Q_{3}$", "right", "quant"),
-                    ("mean" , r"$\mu$"  , "left" , "mean" )]
-
-        for (fld,s,k0,k1) in criteria:
-            x = getattr(dStats, fld)
-            y = self.__rescale__(pdf, hist, kernel.pdf(x))[0]
-            ax.plot((x,)*2, [0,y], **kwargs[k1])
-            ax.annotate(s, (x, y/2), **{**kwargs[k0],
-                                        **{'color':kwargs[k1]["color"]}})
+            for (fld,s,k0,k1) in criteria:
+                x = getattr(dStats, fld)
+                y = self.__rescale__(pdf, hist, kernel.pdf(x))[0]
+                ax.plot((x,)*2, [0,y], **kwargs[k1])
+                ax.annotate(s, (x, y/2), **{**kwargs[k0],
+                                            **{'color':kwargs[k1]["color"]}})
 
         ax.set_ylim(0, ax.get_ylim()[1]*1.1)
         ax.set_ylabel('Numer of Counts', fontweight ="bold") 
+    
+    def __yhistpdf__(self, ax, x, y, var, bw_method=0.1):
+
+        '''Probability Desnsity Function by class'''
+        strfmt = "{} = {:,.0f} ({:,.0%})".format
+        labels, cnts = np.unique(y, return_counts=True)
+        
+        for c,n in zip(labels,cnts):
+            dataset=x[y==c]
+            kernel = stats.gaussian_kde(dataset, bw_method)
+            unq_x  = np.unique(dataset)
+            pdf    = kernel.pdf(unq_x)
+
+            # Plot histogram and pdf.
+            spdf = self.__rescale__(pdf, [0,1])
+            ax.plot(unq_x, spdf, lw=2)
+            ax.fill_between(unq_x, spdf, alpha=0.2, 
+                            label= strfmt(c,n,n/len(y)))
+            
+        # Plot pdf.
+        kernel = stats.gaussian_kde(x, bw_method)
+        unq_x  = np.unique(x)
+        
+        y = self.__rescale__(kernel.pdf(unq_x), [0,1])
+        ax.plot(unq_x, y, **dict(color="#4b6584", lw=3, label=var))
+        
+        ax.set_ylim(0, 1.1)
+        ax.legend(loc='best', framealpha=0, fontsize=10)
+        ax.set_yticks([])
+        ax.set_yticklabels([])
+        
+        for spine in ["right","left","top"]:
+            ax.spines[spine].set_visible(False)
 
     def __axvline__(self, ax, dStats):
 
@@ -1476,15 +1540,15 @@ class Descriptive(UnivariateOutliers, DescStatsPlot):
     
     Parameters
     ----------
-    plot_kwds : keywords
-        Keyword arguments to be passed to kernel density 
-        estimate plot <DescStatsPlot>.
-        
     methods : list of str, default=None
         Method of capping outliers i.e. {"iqr", "mad", 
         "grubb", "mae", "sigma", "gesd", "pct"}. If None, 
         it defaults to all methods available, except "gesd". 
         See UnivariateOutliers.__doc__ for more details.
+        
+    plot_kwds : keywords
+        Keyword arguments to be passed to kernel density 
+        estimate plot <DescStatsPlot>.
     
     Attributes
     ----------
@@ -1691,8 +1755,8 @@ class Descriptive(UnivariateOutliers, DescStatsPlot):
         self.str_info = pd.DataFrame(info)[str_fields]\
         .set_index('variable').sort_index().T
         
-    def plotting(self, var, ax=None, xlim=None):
+    def plotting(self, var, ax=None, xlim=None, y=None):
         
         '''Using <DescStatsPlot> to plot univariate'''
-        self.DescStatsPlot.plotting(var, ax ,xlim)
+        self.DescStatsPlot.plotting(var, ax ,xlim, y)
         plt.tight_layout()
