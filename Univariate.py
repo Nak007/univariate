@@ -1436,27 +1436,21 @@ class DescStatsPlot():
         '''Probability Desnsity Function by class'''
         strfmt = "{} = {:,.0f} ({:,.0%})".format
         labels, cnts = np.unique(y, return_counts=True)
+        bins = np.histogram(x, bins="fd")[1]
         
         for c,n in zip(labels,cnts):
-            dataset=x[y==c]
+            dataset= x[y==c]
             kernel = stats.gaussian_kde(dataset, bw_method)
+            hist   = np.histogram(dataset, bins)[0]/len(dataset)
             unq_x  = np.unique(dataset)
             pdf    = kernel.pdf(unq_x)
-
-            # Plot histogram and pdf.
-            spdf = self.__rescale__(pdf, [0,1])
-            ax.plot(unq_x, spdf, lw=2)
-            ax.fill_between(unq_x, spdf, alpha=0.2, 
-                            label= strfmt(c,n,n/len(y)))
             
-        # Plot pdf.
-        kernel = stats.gaussian_kde(x, bw_method)
-        unq_x  = np.unique(x)
-        
-        y = self.__rescale__(kernel.pdf(unq_x), [0,1])
-        ax.plot(unq_x, y, **dict(color="#4b6584", lw=3, label=var))
-        
-        ax.set_ylim(0, 1.1)
+            # Plot histogram and pdf.
+            spdf = self.__rescale__(pdf, [0,max(hist)])
+            ax.plot(unq_x, pdf, lw=2)
+            ax.fill_between(unq_x, pdf, alpha=0.2, 
+                            label= strfmt(c,n,n/len(y)))
+  
         ax.legend(loc='best', framealpha=0, fontsize=10)
         ax.set_yticks([])
         ax.set_yticklabels([])
@@ -1708,7 +1702,7 @@ class Descriptive(UnivariateOutliers, DescStatsPlot):
                          ("std" , np.std(x)),
                          # Number of unique items and missings
                          ("unique" , np.unique(x).shape[0]), 
-                         ("missing", np.isnan(X[var]).sum()),
+                         ("missing", int(np.isnan(X[var]).sum())),
                          # Quartile and IQR
                          ("min"  , Q[0]), ("pct25", Q[1]), 
                          ("pct50", Q[2]), ("pct75", Q[3]), 
