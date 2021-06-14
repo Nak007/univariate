@@ -1708,7 +1708,7 @@ class Descriptive(UnivariateOutliers, DescStatsPlot):
                          ("std" , np.std(x)),
                          # Number of unique items and missings
                          ("unique" , np.unique(x).shape[0]), 
-                         ("missing", np.isnan(x).sum()),
+                         ("missing", np.isnan(X[var]).sum()),
                          # Quartile and IQR
                          ("min"  , Q[0]), ("pct25", Q[1]), 
                          ("pct50", Q[2]), ("pct75", Q[3]), 
