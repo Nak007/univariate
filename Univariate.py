@@ -354,8 +354,8 @@ def __ContDist__(dist):
         required for specified distribution with two keys i.e. 
         "args" (positional), and "kwds" (keyword).
     
-    \t dist_name : `str`
-    \t Name of cont. distribution function under <scipy.stats>. 
+    dist_name : `str`
+        Name of cont. distribution function under <scipy.stats>. 
     
     References
     ----------
@@ -1394,7 +1394,7 @@ class DescStatsPlot():
                     bw_method=0.1, use_hist=False):
 
         '''Probability Desnsity Function'''
-        kwargs = {"hist"  : dict(color="#d1d8e0", bins=bins, alpha=0.5), 
+        kwargs = {"hist"  : dict(color="#d1d8e0", bins=bins, alpha=0.7), 
                   "kde"   : dict(color="#4b6584", lw=3),
                   "mean"  : dict(color="#eb3b5a", lw=2),
                   "quant" : dict(color="#3867d6", lw=2), 
