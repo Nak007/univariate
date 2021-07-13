@@ -330,7 +330,7 @@ def chi2_test(x, dist='norm', bins=10):
 
     # Critical value and degrees of freedom.
     cv = ((observe-expect)**2/expect).sum()
-    df = max(len(bins[1:])-2-1,1)
+    df = max(len(bins[1:])-1,1)
     return Chi2Test(cv=cv, df=df,
                     pvalue=1-stats.chi2.cdf(cv, df=df), 
                     dist=dist_name, params=params)
@@ -1882,7 +1882,7 @@ def BoxPlot(y, x, ax=None, med_fmt=None, colors=None,
     
     if return_result: return ax, result
     else: return ax
-    
+ 
 class Compare2samp:
     
     '''
@@ -2057,7 +2057,7 @@ class Compare2samp:
 
             # Chi-Square test for goodness of fit.
             chi2_cv = ((f_obs-f_exp)**2/f_exp).sum()
-            chi2_df = max(len(chi2_bins[1:])-2-1,1)
+            chi2_df = max(len(chi2_bins[1:])-1,1)
             chi2_pvalue = 1-stats.chi2.cdf(chi2_cv, df=chi2_df)
 
             # Kolmogorov-Smirnov test for goodness of fit.
@@ -2085,13 +2085,18 @@ class Compare2samp:
             data2 = cat_obs[:,n].copy()
             
             # Calculate bin edges, given binning method.
-            chi2_bins = self.__bins__(data1, max(data1), self.equal_width)
+            chi2_bins = self.__bins__(data1, max(data1)+1, self.equal_width)
             chi2_bins = self.__leqx__(data1, chi2_bins, n_min)
             
             # Frequency of expected and observed samples
             f_exp = self.__freq__(data1, chi2_bins, len(chi2_bins))
             f_obs = self.__freq__(data2, chi2_bins, len(chi2_bins))
             f_exp = np.where(f_exp==0, np.finfo(float).eps, f_exp)
+            
+            # Chi-Square test for goodness of fit.
+            chi2_cv = ((f_obs-f_exp)**2/f_exp).sum()
+            chi2_df = max(len(chi2_bins[1:])-1,1)
+            chi2_pvalue = 1-stats.chi2.cdf(chi2_cv, df=chi2_df)
             
             # Change chi2_bins format 
             # i.e. (Group(x), [element(x,1), .., element(x,n)])
@@ -2114,9 +2119,10 @@ class Compare2samp:
         attr = lambda k,f : getattr(self.result[k],f)
         for key in self.result.keys():
             stats = [attr(key,fld) if fld!='chi2_bins' 
-                     else len(attr(key,fld))-1 for fld in self.fields]
+                     else 0 for fld in self.fields]
             data.append([key] + stats)
         info = pd.DataFrame(data, columns=["variable"] + self.fields)
+        info['chi2_bins'] = info['chi2_df'] + 1
         self.info = info.set_index("variable")
       
     def __freq__(self, x, bins, max_index=None):
