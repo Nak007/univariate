@@ -1882,7 +1882,7 @@ def BoxPlot(y, x, ax=None, med_fmt=None, colors=None,
     
     if return_result: return ax, result
     else: return ax
- 
+    
 class Compare2samp:
     
     '''
@@ -2056,7 +2056,7 @@ class Compare2samp:
             f_exp = np.where(f_exp==0, np.finfo(float).eps, f_exp)
 
             # Chi-Square test for goodness of fit.
-            chi2_cv = ((f_obs-f_exp)**2/f_exp).sum()
+            chi2_cv = ((f_obs-f_exp)**2/f_exp).sum()*len(x_obs)
             chi2_df = max(len(chi2_bins[1:])-1,1)
             chi2_pvalue = 1-stats.chi2.cdf(chi2_cv, df=chi2_df)
 
@@ -2094,7 +2094,7 @@ class Compare2samp:
             f_exp = np.where(f_exp==0, np.finfo(float).eps, f_exp)
             
             # Chi-Square test for goodness of fit.
-            chi2_cv = ((f_obs-f_exp)**2/f_exp).sum()
+            chi2_cv = ((f_obs-f_exp)**2/f_exp).sum()*len(cat_obs)
             chi2_df = max(len(chi2_bins[1:])-1,1)
             chi2_pvalue = 1-stats.chi2.cdf(chi2_cv, df=chi2_df)
             
