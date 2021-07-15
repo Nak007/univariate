@@ -65,19 +65,24 @@ def qq_plot(x, dist="norm", bins=10):
     -------
     QQ_plot : collections.namedtuple
         A tuple subclasses with named fields as follow:
-        - r : float 
-          Pearson’s correlation coefficient.
-        - cv : float
-          Critival value given (α, df)= (0.05, N-2).
-        - rmse : float
-          Root Mean Square Error, where error is defined as 
-          difference between x and theoretical dist.
-        - dist_name : str
-          Name of cont. distribution function <scipy.stats>. 
-        - params : tuple
-          Tuple of output from <scipy.stats.rv_continuous.fit> i.e. 
-          MLEs for shape (if applicable), location, and scale 
-          parameters from data.
+        
+        r : float 
+            Pearson’s correlation coefficient.
+        
+        statistic : float
+            Test statistic given (α, df)= (0.05, N-2).
+              
+        rmse : float
+            Root Mean Square Error, where error is defined as 
+            difference between x and theoretical dist.
+        
+        dist_name : str
+            Name of cont. distribution function <scipy.stats>. 
+        
+        params : tuple
+            Tuple of output from <scipy.stats.rv_continuous.fit> 
+            i.e. MLEs for shape (if applicable), location, and 
+            scale parameters from data.
 
     References
     ----------
@@ -96,7 +101,7 @@ def qq_plot(x, dist="norm", bins=10):
     See whether x follows normal or uniform distribution.
     >>> qq_plot(x, dist="norm")
     QQ_plot(r=0.9998759256965546, 
-    ...     cv=0.6020687774273007, 
+    ...     statistic=0.6020687774273007, 
     ...     mse=0.00404352706993056, 
     ...     dist_name='norm', 
     ...     params=(1.9492911213351323, 
@@ -104,7 +109,7 @@ def qq_plot(x, dist="norm", bins=10):
     
     >>> qq_plot(x, dist="uniform")
     QQ_plot(r=0.9717582798499491, 
-    ...     cv=0.6020687774273007, 
+    ...     statistic=0.6020687774273007, 
     ...     mse=1.536599729650572, 
     ...     dist_name='uniform', 
     ...     params=(-3.5451855128533003, 
@@ -118,7 +123,7 @@ def qq_plot(x, dist="norm", bins=10):
     to conclude "goodness of fit" of both distributions.
     
     '''
-    keys = ['r', 'cv', 'rmse', 'dist', 'params']
+    keys = ['r', 'statistic', 'rmse', 'dist', 'params']
     qq = collections.namedtuple('QQ_plot', keys)
     
     # Number of bins must not exceed length of x
@@ -133,16 +138,16 @@ def qq_plot(x, dist="norm", bins=10):
     else: qj = dist.ppf(pj/100)
     r, _ = stats.pearsonr(xj, qj)
   
-    # Calculate critical value.
+    # Calculate test statistic.
     alpha, df = 0.05, min(len(xj),500)-2
-    ct = stats.t.ppf(1-alpha/2,df)
-    cv = np.sqrt(ct**2/(ct**2+df))
+    t = stats.t.ppf(1-alpha/2,df)
+    statistic = np.sqrt(t**2/(t**2+df))
     
     # A modified Q-Q plot
     rmse = np.sqrt(np.nanmean((xj-qj)**2))
     
-    return qq(r=r, cv=cv, rmse=rmse,
-              dist=dist_name, 
+    return qq(r=r, statistic=statistic, 
+              rmse=rmse, dist=dist_name, 
               params=params)
 
 def ks_test(x, dist="norm"):
@@ -155,15 +160,15 @@ def ks_test(x, dist="norm"):
     
                       s(x,m) = f(m,x)/n(m)
     
-    where `f(m,x)` is a cumulative frequency of distribution 
-    `m` given `x` and `n(m)` is a number of samples of `m`.
+    where f(m,x) is a cumulative frequency of distribution m 
+    given x and n(m) is a number of samples of m.
     The Kolmogorov–Smirnov statistic for two given cumulative 
-    distribution function, `a` and `b` is:
+    distribution function, a and b is:
     
                    D(a,b) = max|s(x,a) - s(x,b)|
                 
     where a ∪ b = {x: x ∈ a or x ∈ b}. The null hypothesis or 
-    `H0` says that both independent samples have the same  
+    H0 says that both independent samples have the same  
     distribution.
     
     .. versionadded:: 30-05-2021
@@ -173,9 +178,9 @@ def ks_test(x, dist="norm"):
     x : array-like (1-dimensional) of float
         Input data.
     
-    dist : `str` or function, default="norm"
-        If `dist` is a string, it defines the name of continuous 
-        distribution function under <scipy.stats>. If `dist` is a 
+    dist : str or function, default="norm"
+        If dist is a string, it defines the name of continuous 
+        distribution function under <scipy.stats>. If dist is a 
         function, it must have an interface similar to 
         <scipy.stats._continuous_distns>.
     
@@ -183,16 +188,20 @@ def ks_test(x, dist="norm"):
     -------
     KsTest : collections.namedtuple
         A tuple subclasses with named fields as follow:
-        - statistic : float
-          Critival value
-        - p_value : float
-          p-value that corresponds to `statistic`.
-        - dist_name : str
-          Name of cont. distribution function <scipy.stats>. 
-        - params : tuple
-          Tuple of output from <scipy.stats.rv_continuous.fit> 
-          i.e. MLEs for shape (if applicable), location, and 
-          scale parameters from data.
+        
+        statistic : float
+            Kolmogorov-Smirnov test statistic
+            
+        p_value : float
+            p-value that corresponds to statistic.
+            
+        dist_name : str
+            Name of cont. distribution function <scipy.stats>. 
+        
+        params : tuple
+            Tuple of output from <scipy.stats.rv_continuous.fit> 
+            i.e. MLEs for shape (if applicable), location, and 
+            scale parameters from data.
 
     Examples
     --------
@@ -243,36 +252,38 @@ def chi2_test(x, dist='norm', bins=10):
         Input data.
     
     dist : str or function, default="norm"
-        If `dist` is a string, it defines the name of continuous 
-        distribution function under <scipy.stats>. If `dist` is a 
+        If dist is a string, it defines the name of continuous 
+        distribution function under <scipy.stats>. If dist is a 
         function, it must have an interface similar to 
         <scipy.stats._continuous_distns>.
     
     bins : int or sequence of scalars, default=10
-        If `bins` is an int, it defines the number of equal-sample 
-        bins. If `bins` is a sequence, it defines a monotonically 
+        If bins is an int, it defines the number of equal-sample 
+        bins. If bins is a sequence, it defines a monotonically 
         increasing array of bin edges, including the rightmost edge.
 
     Returns
     -------
     Chi2_Test : collections.namedtuple
         A tuple subclasses with named fields as follow:
-        - cv : float
-          a critival value. If the critical value from the table
-          given `degrees of freedom` and `α` (rejection region)
-          is less than the computed critical value (`cv`), then
-          the observed data does not fit the expected population.
-        - df : int 
-          Degrees of freedom.
-        - p_value : float
-          p-value that corresponds to `cv`.
-        - dist_name : str
-          Name of cont. distribution function under <scipy.stats>. 
-        - params : tuple
-          Tuple of output from <scipy.stats.rv_continuous.fit> 
-          i.e. MLEs for shape (if applicable), location, and scale 
-          parameters from data.
-    
+        
+        chisq : float
+            The chi-squared test statistic. 
+            
+        df : int 
+            Degrees of freedom.
+            
+        p_value : float
+            p-value that corresponds to chisq.
+            
+        dist_name : str
+            Name of cont. distribution function under <scipy.stats>. 
+            
+        params : tuple
+            Tuple of output from <scipy.stats.rv_continuous.fit> 
+            i.e. MLEs for shape (if applicable), location, and scale 
+            parameters from data.
+          
     References
     ----------
     .. [1] https://docs.scipy.org/doc/scipy/reference/stats.html
@@ -289,7 +300,7 @@ def chi2_test(x, dist='norm', bins=10):
     Ha : data does not follow a normal distribution.
     
     >>> chi2_test(x, dist="norm")
-    Chi2_Test(cv=0.4773224553586323, df=9, 
+    Chi2_Test(chisq=0.4773224553586323, df=9, 
     ...       pvalue=0.9999750744566653, 
     ...       dist='norm', 
     ...       params=(1.9492911213351323, 1.9963135546858515))
@@ -303,10 +314,10 @@ def chi2_test(x, dist='norm', bins=10):
     16.9190
     
     We cannot reject the null hypotheis since χ2 is 0.4773, 
-    which is less than χ2(α=5%, df=10-1) = 16.9190
+    which is less than χ2(α=5%, df=10-1) = 16.9190.
     
     '''
-    keys = ['cv', 'df', 'pvalue', 'dist', 'params']
+    keys = ['chisq', 'df', 'pvalue', 'dist', 'params']
     Chi2Test = collections.namedtuple('Chi2_Test', keys)
     
     if isinstance(bins, int): bins = __quantiles__(x, bins)
@@ -320,11 +331,11 @@ def chi2_test(x, dist='norm', bins=10):
     else: cdf = dist.cdf(bins)
     expect = np.diff(cdf)*100
 
-    # Critical value and degrees of freedom.
-    cv = ((observe-expect)**2/expect).sum()
+    # Chi-squared test statistic and degrees of freedom.
+    chisq = ((observe-expect)**2/expect).sum()
     df = max(len(bins[1:])-1,1)
-    return Chi2Test(cv=cv, df=df,
-                    pvalue=1-stats.chi2.cdf(cv, df=df), 
+    return Chi2Test(chisq=chisq, df=df,
+                    pvalue=1-stats.chi2.cdf(chisq, df=df), 
                     dist=dist_name, params=params)
 
 def __ContDist__(dist):
@@ -337,7 +348,7 @@ def __ContDist__(dist):
     Parameters
     ----------
     dist : str or function, default="norm"
-        If `dist` is a string, it defines the name of 
+        If dist is a string, it defines the name of 
         continuous distribution function under <scipy.stats>. 
         If `dist` is a function, it must have an interface 
         similar to <scipy.stats.rv_continuous>.
@@ -347,18 +358,19 @@ def __ContDist__(dist):
     dist : scipy.stats.rv_continuous
     
     params : dict
-        Only available when `dist` is "rv_frozen", otherwise 
-        it defaults to None. `params` contains shape parameters 
+        Only available when dist is "rv_frozen", otherwise 
+        it defaults to None. params contains shape parameters 
         required for specified distribution with two keys i.e. 
         "args" (positional), and "kwds" (keyword).
     
-    dist_name : `str`
+    dist_name : str
         Name of cont. distribution function under <scipy.stats>. 
     
     References
     ----------
     .. [1] https://docs.scipy.org/doc/scipy/reference/stats.html
-    .. [2] https://docs.scipy.org/doc/scipy/reference/tutorial/stats.html
+    .. [2] https://docs.scipy.org/doc/scipy/reference/tutorial/
+           stats.html
    
     '''
     # Check whether `dist` is callable or not.
@@ -402,7 +414,7 @@ class MatchDist():
     Parameters
     ----------
     dist : list of str or function, default=None
-        If item in `dist` is a string, it defines the name 
+        If item in dist is a string, it defines the name 
         of continuous distribution function under 
         <scipy.stats.rv_continuous>. If item is a function, 
         it must have an interface similar to <scipy.stats>.
@@ -438,12 +450,11 @@ class MatchDist():
     info : pd.DataFrame
         Information table is comprised of:
         - "variable"    : variable name
-        - "chi2_cv"     : Chi-Square test critival value
+        - "chi2_chisq"  : Chi-Squar test statistic 
         - "chi2_pvalue" : Chi-Square test p-value
         - "chi2_dist"   : <scipy.stats.rv_continuous> from 
                           Chi-Square test
-        - "ks_statistic": Kolmogorov-Smirnov test critival 
-                          value
+        - "ks_statistic": Kolmogorov-Smirnov test statistic 
         - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
         - "ks_dist"     : <scipy.stats.rv_continuous> from 
                           Kolmogorov-Smirnov test
@@ -542,12 +553,11 @@ class MatchDist():
         info : pd.DataFrame
             Information table is comprised of:
             - "variable"    : variable name
-            - "chi2_cv"     : Chi-Square test critival value
+            - "chi2_chisq"  : Chi-Squar test statistic 
             - "chi2_pvalue" : Chi-Square test p-value
             - "chi2_dist"   : <scipy.stats.rv_continuous> from 
                               Chi-Square test
-            - "ks_statistic": Kolmogorov-Smirnov test critival 
-                              value
+            - "ks_statistic": Kolmogorov-Smirnov test statistic 
             - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
             - "ks_dist"     : <scipy.stats.rv_continuous> from 
                               Kolmogorov-Smirnov test
@@ -602,7 +612,7 @@ class MatchDist():
             
             # Chi2 test
             outs = [delayed(part_ch)(x, dist=rv) for rv in rv_frozen]
-            chi2 = self.args(min(mod_job(outs), key=lambda x : x.cv))
+            chi2 = self.args(min(mod_job(outs), key=lambda x : x.chisq))
             
             result[usecols[n]] = method(chi2, ks, qq)
             t.value = progress((n+1)/X0.shape[1])
@@ -625,12 +635,11 @@ class MatchDist():
         info : pd.DataFrame
             Information table is comprised of:
             - "variable"    : variable name
-            - "chi2_cv"     : Chi-Square test critival value
+            - "chi2_chisq"  : Chi-Squar test statistic 
             - "chi2_pvalue" : Chi-Square test p-value
             - "chi2_dist"   : <scipy.stats.rv_continuous> from 
                               Chi-Square test
-            - "ks_statistic": Kolmogorov-Smirnov test critival 
-                              value
+            - "ks_statistic": Kolmogorov-Smirnov test statistic 
             - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
             - "ks_dist"     : <scipy.stats.rv_continuous> from 
                               Kolmogorov-Smirnov test
@@ -638,9 +647,10 @@ class MatchDist():
             - "qq_rmse"     : QQ-plot Root Mean Square Error
             - "qq_dist"     : <scipy.stats.rv_continuous> from 
                               QQ-plot
+                              
         '''
         # Field names
-        fields = {'chi2': ['cv','pvalue','dist'],
+        fields = {'chi2': ['chisq','pvalue','dist'],
                   'ks'  : ['statistic','pvalue','dist'],
                   'qq'  : ['r','rmse','dist']}
 
@@ -1874,7 +1884,7 @@ def BoxPlot(y, x, ax=None, med_fmt=None, colors=None,
     
     if return_result: return ax, result
     else: return ax
- 
+    
 class Compare2samp:
     
     '''
@@ -1919,22 +1929,22 @@ class Compare2samp:
         variable. Within each key, it contains "Stats" 
         (collections.namedtuple) with following fields:
         - "variable"    : Variable name
-        - "chi2_cv"     : Chi-Square test critival value
+        - "chi2_chisq"  : Chi-Square test statistic
         - "chi2_df"     : Chi-Square degrees of freedom
         - "chi2_pvalue" : Chi-Square test p-value
         - "chi2_bins"   : Chi-Square bin edges
-        - "ks_stat"     : Kolmogorov-Smirnov test critival value
+        - "ks_stat"     : Kolmogorov-Smirnov test statistic 
         - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
         - "dtype"       : Data type
 
     info : pd.DataFrame
         Information table is comprised of:
         - "variable"    : Variable name
-        - "chi2_cv"     : Chi-Square test critival value
+        - "chi2_chisq"  : Chi-Square test statistic
         - "chi2_df"     : Chi-Square degrees of freedom
         - "chi2_pvalue" : Chi-Square test p-value
         - "chi2_bins"   : Number of Chi-Square bins
-        - "ks_stat"     : Kolmogorov-Smirnov test critival value
+        - "ks_stat"     : Kolmogorov-Smirnov test statistic
         - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
         - "dtype"       : Data type
     
@@ -1989,22 +1999,22 @@ class Compare2samp:
             variable. Within each key, it contains "Stats" 
             (collections.namedtuple) with following fields:
             - "variable"    : Variable name
-            - "chi2_cv"     : Chi-Square test critival value
+            - "chi2_chisq"  : Chi-Square test statistic
             - "chi2_df"     : Chi-Square degrees of freedom
             - "chi2_pvalue" : Chi-Square test p-value
             - "chi2_bins"   : Chi-Square bin edges
-            - "ks_stat"     : Kolmogorov-Smirnov test critival value
+            - "ks_stat"     : Kolmogorov-Smirnov test statistic 
             - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
             - "dtype"       : Data type
-     
+
         info : pd.DataFrame
             Information table is comprised of:
             - "variable"    : Variable name
-            - "chi2_cv"     : Chi-Square test critival value
+            - "chi2_chisq"  : Chi-Square test statistic
             - "chi2_df"     : Chi-Square degrees of freedom
             - "chi2_pvalue" : Chi-Square test p-value
             - "chi2_bins"   : Number of Chi-Square bins
-            - "ks_stat"     : Kolmogorov-Smirnov test critival value
+            - "ks_stat"     : Kolmogorov-Smirnov test statistic
             - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
             - "dtype"       : Data type
         
@@ -2025,7 +2035,7 @@ class Compare2samp:
         num_features = list(x_exp.select_dtypes(include=np.number))
             
         # Initialize parameters.
-        self.fields = ["chi2_cv", "chi2_df", "chi2_pvalue", 
+        self.fields = ["chi2_chisq", "chi2_df", "chi2_pvalue", 
                        "chi2_bins", "ks_stat", "ks_pvalue", "dtype"]
         Stats = collections.namedtuple('Stats', self.fields)   
         self.result = collections.OrderedDict()
@@ -2050,16 +2060,16 @@ class Compare2samp:
             f_exp = np.where(f_exp==0, np.finfo(float).eps, f_exp)
 
             # Chi-Square test for goodness of fit.
-            chi2_cv = ((f_obs-f_exp)**2/f_exp).sum()*100
+            chi2_chisq = ((f_obs-f_exp)**2/f_exp).sum()*100
             chi2_df = max(len(chi2_bins)-2,1)
-            chi2_pvalue = 1-stats.chi2.cdf(chi2_cv, df=chi2_df)
+            chi2_pvalue = 1-stats.chi2.cdf(chi2_chisq, df=chi2_df)
 
             # Kolmogorov-Smirnov test for goodness of fit.
             kwd = dict(alternative='two-sided', mode='auto')
             ks_stat, ks_pvalue = stats.ks_2samp(data1, data2, **kwd)
             
             self.hist_data[feat] = Params(*(f_exp, f_obs, "number"))
-            self.result[feat] = Stats(*(chi2_cv, chi2_df, chi2_pvalue, 
+            self.result[feat] = Stats(*(chi2_chisq, chi2_df, chi2_pvalue, 
                                         chi2_bins, ks_stat, ks_pvalue, 
                                         data1.dtype))
             
@@ -2088,9 +2098,9 @@ class Compare2samp:
             f_exp = np.where(f_exp==0, np.finfo(float).eps, f_exp)
             
             # Chi-Square test for goodness of fit.
-            chi2_cv = ((f_obs-f_exp)**2/f_exp).sum()*100
+            chi2_chisq = ((f_obs-f_exp)**2/f_exp).sum()*100
             chi2_df = max(len(chi2_bins)-2,1)
-            chi2_pvalue = 1-stats.chi2.cdf(chi2_cv, df=chi2_df)
+            chi2_pvalue = 1-stats.chi2.cdf(chi2_chisq, df=chi2_df)
             
             # Change chi2_bins format 
             # i.e. (Group(x), [element(x,1), .., element(x,n)])
@@ -2099,7 +2109,7 @@ class Compare2samp:
                          for i in np.unique(index)]
             
             self.hist_data[feat] = Params(*(f_exp, f_obs, "category"))
-            self.result[feat] = Stats(*(chi2_cv, chi2_df, chi2_pvalue, 
+            self.result[feat] = Stats(*(chi2_chisq, chi2_df, chi2_pvalue, 
                                         chi2_bins, np.nan, np.nan, 
                                         "category"))
         
