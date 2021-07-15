@@ -41,26 +41,25 @@ __all__ = ["qq_plot",
 def qq_plot(x, dist="norm", bins=10):
     
     '''
-    Q–Q (quantile-quantile) plot is a probability plot, 
-    which is a graphical method for comparing two 
-    distributions.
+    Q–Q (quantile-quantile) plot is a probability plot, which 
+    is a graphical method for comparing two distributions.
     
     .. versionadded:: 30-05-2021
     
     Parameters
     ----------
-    x : array-like (1-dimensional) of `float`
+    x : array-like (1-dimensional) of float
         Input data.
     
     dist : str or function, default="norm"
-        If `dist` is a string, it defines the name of 
-        continuous distribution function under <scipy.stats>. 
-        If `dist` is a function, it must have an interface 
-        similar to <scipy.stats._continuous_distns>.
+        If `dist` is a string, it defines the name of continuous 
+        distribution function under <scipy.stats>. If `dist` is 
+        a function, it must have an interface similar to 
+        <scipy.stats._continuous_distns>.
     
     bins : int, default=10
-        `bins` defines the number of quantile bins between
-        1st and 99th quantiles.
+        It defines the number of quantile bins between 1st and 
+        99th quantiles.
     
     Returns
     -------
@@ -69,16 +68,16 @@ def qq_plot(x, dist="norm", bins=10):
         - r : float 
           Pearson’s correlation coefficient.
         - cv : float
-          Critival value given α = 0.05 and df = N - 2.
+          Critival value given (α, df)= (0.05, N-2).
         - rmse : float
           Root Mean Square Error, where error is defined as 
           difference between x and theoretical dist.
         - dist_name : str
           Name of cont. distribution function <scipy.stats>. 
         - params : tuple
-          Tuple of output from <scipy.stats.rv_continuous.fit> 
-          i.e. MLEs for shape (if applicable), location, and 
-          scale parameters from data.
+          Tuple of output from <scipy.stats.rv_continuous.fit> i.e. 
+          MLEs for shape (if applicable), location, and scale 
+          parameters from data.
 
     References
     ----------
@@ -91,12 +90,10 @@ def qq_plot(x, dist="norm", bins=10):
     >>> from scipy import stats
     
     Create normal random variable x ~ N(μ,σ) = (2,2).
-    
-    >>> kwargs = dict(size=500, random_state=0)
-    >>> x = stats.norm(loc=2, scale=2).rvs(**kwargs)
+    >>> x = stats.norm(loc=2, scale=2).rvs(size=500, 
+    ...                                    random_state=0)
     
     See whether x follows normal or uniform distribution.
-    
     >>> qq_plot(x, dist="norm")
     QQ_plot(r=0.9998759256965546, 
     ...     cv=0.6020687774273007, 
@@ -177,10 +174,10 @@ def ks_test(x, dist="norm"):
         Input data.
     
     dist : `str` or function, default="norm"
-        If `dist` is a string, it defines the name of 
-        continuous distribution function under <scipy.stats>. 
-        If `dist` is a function, it must have an interface 
-        similar to <scipy.stats._continuous_distns>.
+        If `dist` is a string, it defines the name of continuous 
+        distribution function under <scipy.stats>. If `dist` is a 
+        function, it must have an interface similar to 
+        <scipy.stats._continuous_distns>.
     
     Returns
     -------
@@ -202,12 +199,10 @@ def ks_test(x, dist="norm"):
     >>> from scipy import stats
     
     Create normal random variable x ~ N(μ,σ) = (2,2).
-    
-    >>> kwargs = dict(size=500, random_state=0)
-    >>> x = stats.norm(loc=2, scale=2).rvs(**kwargs)
+    >>> x = stats.norm(loc=2, scale=2).rvs(size=500, 
+    ...                                    random_state=0)
     
     See whether x follows normal distribution or not.
-    
     >>> ks_test(x, dist="norm")
     KsTest(statistic=0.04627618822251736, 
     ...    pvalue=0.9829477885429552, 
@@ -236,11 +231,10 @@ def ks_test(x, dist="norm"):
 def chi2_test(x, dist='norm', bins=10):
 
     '''
-    Chi-Square (χ2) is used to test whether sample data 
-    fits a distribution from a certain population or not.
-    Its null hypothesis or `H0` says that the observed
-    population (x) follows the theoretical distribution.
-    
+    In the test of Chi-Square (χ2) for homogeneity of proportion, 
+    the null hypothesis says that the distribution of sample data 
+    fit a distribution from a certain population or not.
+
     .. versionadded:: 30-05-2021
     
     Parameters
@@ -249,16 +243,15 @@ def chi2_test(x, dist='norm', bins=10):
         Input data.
     
     dist : str or function, default="norm"
-        If `dist` is a string, it defines the name of 
-        continuous distribution function under <scipy.stats>. 
-        If `dist` is a function, it must have an interface 
-        similar to <scipy.stats._continuous_distns>.
+        If `dist` is a string, it defines the name of continuous 
+        distribution function under <scipy.stats>. If `dist` is a 
+        function, it must have an interface similar to 
+        <scipy.stats._continuous_distns>.
     
     bins : int or sequence of scalars, default=10
-        If `bins` is an int, it defines the number of 
-        equal-sample bins. If `bins` is a sequence, it 
-        defines a monotonically increasing array of bin edges, 
-        including the rightmost edge.
+        If `bins` is an int, it defines the number of equal-sample 
+        bins. If `bins` is a sequence, it defines a monotonically 
+        increasing array of bin edges, including the rightmost edge.
 
     Returns
     -------
@@ -289,36 +282,35 @@ def chi2_test(x, dist='norm', bins=10):
     >>> from scipy import stats
     
     Create normal random variable x ~ N(μ,σ) = (2,2).
-    
-    >>> kwargs = dict(size=500, random_state=0)
-    >>> x = stats.norm(loc=2, scale=2).rvs(**kwargs)
+    >>> x = stats.norm(loc=2, scale=2).rvs(size=500, 
+    ...                                    random_state=0)
     
     H0 : data follows a normal distribution.
     Ha : data does not follow a normal distribution.
-
+    
     >>> chi2_test(x, dist="norm")
-    Chi2_Test(cv=2.3866122767931617, df=7, 
-    ...       p_value=0.9353905800003721, 
-    ...       dist_name='norm', 
+    Chi2_Test(cv=0.4773224553586323, df=9, 
+    ...       pvalue=0.9999750744566653, 
+    ...       dist='norm', 
     ...       params=(1.9492911213351323, 1.9963135546858515))
     
     If α is 5% (0.05), we can not reject the null hypothesis 
-    (0.94 > 0.05). Or we can determine the critical value as 
+    (0.99 > 0.05). Or we can determine the critical value as 
     follows:
     
-    >>> df = 10 - 2 - 1
+    >>> df = 10 - 1
     >>> cv = chi2.ppf(0.95, df)
-    14.067140449340169
+    16.9190
     
-    We cannot reject the null hypotheis since χ2 is 2.389, 
-    which is less than χ2(α=5%, df=10-2-1) = 14.067
+    We cannot reject the null hypotheis since χ2 is 0.4773, 
+    which is less than χ2(α=5%, df=10-1) = 16.9190
     
     '''
     keys = ['cv', 'df', 'pvalue', 'dist', 'params']
     Chi2Test = collections.namedtuple('Chi2_Test', keys)
     
     if isinstance(bins, int): bins = __quantiles__(x, bins)
-    observe = np.histogram(x, bins)[0]
+    observe = np.histogram(x, bins)[0]/len(x)*100
 
     # Cumulative density function.
     dist, params, dist_name = __ContDist__(dist)
@@ -326,7 +318,7 @@ def chi2_test(x, dist='norm', bins=10):
         params = dist.fit(x)
         cdf = dist.cdf(bins, *params)
     else: cdf = dist.cdf(bins)
-    expect = np.diff(cdf)*len(x)
+    expect = np.diff(cdf)*100
 
     # Critical value and degrees of freedom.
     cv = ((observe-expect)**2/expect).sum()
@@ -1882,12 +1874,12 @@ def BoxPlot(y, x, ax=None, med_fmt=None, colors=None,
     
     if return_result: return ax, result
     else: return ax
-    
+ 
 class Compare2samp:
     
     '''
-    Compare two sets of sample by using Chi-Square [1] and 
-    Kolmogorov-Smirnov [2,3] tests.
+    Compare two sets of sample by using Chi-Square test for 
+    homogeneity [1,2] and Kolmogorov-Smirnov [3,4] tests.
     
     versionadded:: 10-07-2021
     
@@ -1914,8 +1906,10 @@ class Compare2samp:
     References
     ----------
     .. [1] https://en.wikipedia.org/wiki/Goodness_of_fit
-    .. [2] https://en.wikipedia.org/wiki/Kolmogorov–Smirnov_test
-    .. [3] https://docs.scipy.org/doc/scipy/reference/generated/
+    .. [2] https://courses.lumenlearning.com/wmopen-concepts-
+           statistics/chapter/test-of-homogeneity/
+    .. [3] https://en.wikipedia.org/wiki/Kolmogorov–Smirnov_test
+    .. [4] https://docs.scipy.org/doc/scipy/reference/generated/
            scipy.stats.ks_2samp.html
     
     Attributes
@@ -2056,8 +2050,8 @@ class Compare2samp:
             f_exp = np.where(f_exp==0, np.finfo(float).eps, f_exp)
 
             # Chi-Square test for goodness of fit.
-            chi2_cv = ((f_obs-f_exp)**2/f_exp).sum()*len(x_obs)
-            chi2_df = max(len(chi2_bins[1:])-1,1)
+            chi2_cv = ((f_obs-f_exp)**2/f_exp).sum()*100
+            chi2_df = max(len(chi2_bins)-2,1)
             chi2_pvalue = 1-stats.chi2.cdf(chi2_cv, df=chi2_df)
 
             # Kolmogorov-Smirnov test for goodness of fit.
@@ -2094,8 +2088,8 @@ class Compare2samp:
             f_exp = np.where(f_exp==0, np.finfo(float).eps, f_exp)
             
             # Chi-Square test for goodness of fit.
-            chi2_cv = ((f_obs-f_exp)**2/f_exp).sum()*len(cat_obs)
-            chi2_df = max(len(chi2_bins[1:])-1,1)
+            chi2_cv = ((f_obs-f_exp)**2/f_exp).sum()*100
+            chi2_df = max(len(chi2_bins)-2,1)
             chi2_pvalue = 1-stats.chi2.cdf(chi2_cv, df=chi2_df)
             
             # Change chi2_bins format 
