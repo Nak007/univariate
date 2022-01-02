@@ -6,12 +6,12 @@ Univariate-related functions:
 [4] UnivariateOutliers
 [5] MatchDist
 [6] Descriptive
-[7] DescStatsPlot
+[7] descriptive_plot
 [8] BoxPlot
 [9] Compare2samp
 
 Authors: Danusorn Sitdhirasdr <danusorn.si@gmail.com>
-versionadded:: 10-07-2021
+versionadded:: 01-01-2022
 
 '''
 import numpy as np, pandas as pd, time
@@ -25,8 +25,15 @@ from joblib import Parallel, delayed
 from functools import partial
 from typing import Optional, Sequence, Tuple, Union
 import matplotlib.pyplot as plt
-import matplotlib
+import matplotlib as mpl
 from sklearn.preprocessing import OrdinalEncoder
+from scipy.interpolate import interp1d
+import matplotlib.transforms as transforms
+from sklearn.neighbors import KernelDensity
+
+plt.rcParams.update({'font.family':'sans-serif'})
+plt.rcParams.update({'font.sans-serif':'Hiragino Sans GB'})
+plt.rc('axes', unicode_minus=False)
 
 __all__ = ["qq_plot", 
            "chi2_test", 
@@ -34,15 +41,76 @@ __all__ = ["qq_plot",
            "UnivariateOutliers" ,
            "MatchDist", 
            "Descriptive",
-           "DescStatsPlot",
+           "descriptive_plot",
            "BoxPlot", 
-           "Compare2samp", "column_dtype"]
+           "Compare2samp"]
+
+def __ContDist__(dist):
+    
+    '''
+    ** Private Function **
+    Check and return scipy.stats._continuous_distns
+    
+    Parameters
+    ----------
+    dist : str or function, default="norm"
+        If dist is a string, it defines the name of continuous 
+        distribution function under <scipy.stats>. If `dist` is a 
+        function, it must have an interface similar to <scipy.stats.
+        rv_continuous>.
+    
+    Returns
+    -------
+    dist : scipy.stats.rv_continuous
+    
+    params : dict
+        Only available when dist is "rv_frozen", otherwise it defaults 
+        to None. params contains shape parameters required for specified 
+        distribution with two keys i.e. "args" (positional), and "kwds" 
+        (keyword).
+    
+    dist_name : str
+        Name of cont. distribution function under <scipy.stats>. 
+    
+    References
+    ----------
+    .. [1] https://docs.scipy.org/doc/scipy/reference/stats.html
+    .. [2] https://docs.scipy.org/doc/scipy/reference/tutorial/stats.html
+   
+    '''
+    # Check whether `dist` is callable or not.
+    if isinstance(dist, str):
+        # Find all continuous distributions in scipy.stats
+        cont_dist = stats.rv_continuous
+        cont_dist = [d for d in dir(stats) 
+                     if isinstance(getattr(stats, d), cont_dist)]
+
+        if dist not in cont_dist:
+            warn(f"There is no <{dist}> under scipy.stats. " 
+                 f"<norm> is used instead.", Warning)
+            dist = getattr(stats, "norm")
+        else: dist = getattr(stats, dist)
+
+    modules = ['_continuous_distns', '_distn_infrastructure']
+    md = dist.__module__.split(".")[-1]
+    
+    if md not in modules:
+        warn(f"{dist} is neither continuous distribution" 
+             f"nor freezing-parameter function from <scipy.stats>." 
+             f" <function scipy.stats.norm> is used instead.", Warning)
+        return getattr(stats, "norm"), None, dist.__dict__['name']
+    
+    elif md == '_distn_infrastructure':
+        dname = dist.__dict__['dist'].__dict__['name']
+        return dist, {'args':dist.args,'kwds':dist.kwds}, dname
+    
+    else: return dist, None, dist.__dict__['name']
 
 def qq_plot(x, dist="norm", bins=10):
     
     '''
-    Q–Q (quantile-quantile) plot is a probability plot, which 
-    is a graphical method for comparing two distributions.
+    Q–Q (quantile-quantile) plot is a probability plot, which is a 
+    graphical method for comparing two distributions.
     
     .. versionadded:: 30-05-2021
     
@@ -53,13 +121,13 @@ def qq_plot(x, dist="norm", bins=10):
     
     dist : str or function, default="norm"
         If `dist` is a string, it defines the name of continuous 
-        distribution function under <scipy.stats>. If `dist` is 
-        a function, it must have an interface similar to 
-        <scipy.stats._continuous_distns>.
+        distribution function under <scipy.stats>. If `dist` is a 
+        function, it must have an interface similar to <scipy.stats.
+        _continuous_distns>.
     
     bins : int, default=10
-        It defines the number of quantile bins between 1st and 
-        99th quantiles.
+        It defines the number of quantile bins between 1st and 99th 
+        quantiles.
     
     Returns
     -------
@@ -78,25 +146,24 @@ def qq_plot(x, dist="norm", bins=10):
         
         dist_name : str
             Name of cont. distribution function <scipy.stats>. 
-        
+   
         params : tuple
-            Tuple of output from <scipy.stats.rv_continuous.fit> 
-            i.e. MLEs for shape (if applicable), location, and 
-            scale parameters from data.
+            Tuple of output from <scipy.stats.rv_continuous.fit> i.e. 
+            MLEs for shape (if applicable), location, and scale 
+            parameters from data.
 
     References
     ----------
     .. [1] https://docs.scipy.org/doc/scipy/reference/stats.html
-    .. [2] https://www.researchgate.net/publication/291691147_
-           A_modified_Q-Q_plot_for_large_sample_sizes
+    .. [2] https://www.researchgate.net/publication/291691147_A_
+           modified_Q-Q_plot_for_large_sample_sizes
     
     Examples
     --------
     >>> from scipy import stats
     
     Create normal random variable x ~ N(μ,σ) = (2,2).
-    >>> x = stats.norm(loc=2, scale=2).rvs(size=500, 
-    ...                                    random_state=0)
+    >>> x = stats.norm(loc=2, scale=2).rvs(size=500, random_state=0)
     
     See whether x follows normal or uniform distribution.
     >>> qq_plot(x, dist="norm")
@@ -116,11 +183,11 @@ def qq_plot(x, dist="norm", bins=10):
     ...             10.93763361798046))
     
     In this case, "norm" returns higher value of `r` along with 
-    smaller value of `mse`, thus we could say that a random 
-    variable `x`, has a distribution similar to a normal random 
-    distribution, N(μ=2,σ=2). However, visualizing a Q-Q plot is 
-    highly recommended as indicators can sometimes be inadequate 
-    to conclude "goodness of fit" of both distributions.
+    smaller value of `mse`, thus we could say that a random variable 
+    `x`, has a distribution similar to a normal random distribution, 
+    N(μ=2,σ=2). However, visualizing a Q-Q plot is highly recommended 
+    as indicators can sometimes be inadequate to conclude "goodness of 
+    fit" of both distributions.
     
     '''
     keys = ['r', 'statistic', 'rmse', 'dist', 'params']
@@ -153,23 +220,22 @@ def qq_plot(x, dist="norm", bins=10):
 def ks_test(x, dist="norm"):
     
     '''
-    The two-sample Kolmogorov-Smirnov test is a general 
-    nonparametric method for comparing two distributions by 
-    determining the maximum distance from the cumulative 
-    distributions, whose function (`s`) can be expressed as: 
+    The two-sample Kolmogorov-Smirnov test is a general nonparametric 
+    method for comparing two distributions by determining the maximum 
+    distance from the cumulative distributions, whose function (`s`) 
+    can be expressed as: 
     
-                      s(x,m) = f(m,x)/n(m)
+                          s(x,m) = f(m,x)/n(m)
     
-    where f(m,x) is a cumulative frequency of distribution m 
-    given x and n(m) is a number of samples of m.
-    The Kolmogorov–Smirnov statistic for two given cumulative 
-    distribution function, a and b is:
+    where f(m,x) is a cumulative frequency of distribution m given x 
+    and n(m) is a number of samples of m. The Kolmogorov–Smirnov 
+    statistic for two given cumulative distribution function, a and b 
+    is:
     
-                   D(a,b) = max|s(x,a) - s(x,b)|
+                       D(a,b) = max|s(x,a) - s(x,b)|
                 
-    where a ∪ b = {x: x ∈ a or x ∈ b}. The null hypothesis or 
-    H0 says that both independent samples have the same  
-    distribution.
+    where a ∪ b = {x: x ∈ a or x ∈ b}. The null hypothesis or H0 says 
+    that both independent samples have the same distribution.
     
     .. versionadded:: 30-05-2021
     
@@ -181,8 +247,8 @@ def ks_test(x, dist="norm"):
     dist : str or function, default="norm"
         If dist is a string, it defines the name of continuous 
         distribution function under <scipy.stats>. If dist is a 
-        function, it must have an interface similar to 
-        <scipy.stats._continuous_distns>.
+        function, it must have an interface similar to <scipy.stats.
+        _continuous_distns>.
     
     Returns
     -------
@@ -197,19 +263,18 @@ def ks_test(x, dist="norm"):
             
         dist_name : str
             Name of cont. distribution function <scipy.stats>. 
-        
+   
         params : tuple
-            Tuple of output from <scipy.stats.rv_continuous.fit> 
-            i.e. MLEs for shape (if applicable), location, and 
-            scale parameters from data.
+            Tuple of output from <scipy.stats.rv_continuous.fit> i.e. 
+            MLEs for shape (if applicable), location, and scale 
+            parameters from data.
 
     Examples
     --------
     >>> from scipy import stats
     
     Create normal random variable x ~ N(μ,σ) = (2,2).
-    >>> x = stats.norm(loc=2, scale=2).rvs(size=500, 
-    ...                                    random_state=0)
+    >>> x = stats.norm(loc=2, scale=2).rvs(size=500, random_state=0)
     
     See whether x follows normal distribution or not.
     >>> ks_test(x, dist="norm")
@@ -219,8 +284,8 @@ def ks_test(x, dist="norm"):
     ...    params=(0.008306621282718446, 
     ...            1.0587910687362505))
     
-    If α is 5% (0.05), we can not reject the null hypothesis 
-    (0.983 > 0.05).
+    If α is 5% (0.05), we can not reject the null hypothesis (0.983 > 
+    0.05).
     
     '''
     keys = ['statistic', 'pvalue', 'dist', 'params']
@@ -240,9 +305,9 @@ def ks_test(x, dist="norm"):
 def chi2_test(x, dist='norm', bins=10):
 
     '''
-    In the test of Chi-Square (χ2) for homogeneity of proportion, 
-    the null hypothesis says that the distribution of sample data 
-    fit a distribution from a certain population or not.
+    In the test of Chi-Square (χ2) for homogeneity of proportion, the 
+    null hypothesis says that the distribution of sample data fit a 
+    distribution from a certain population or not.
 
     .. versionadded:: 30-05-2021
     
@@ -254,13 +319,13 @@ def chi2_test(x, dist='norm', bins=10):
     dist : str or function, default="norm"
         If dist is a string, it defines the name of continuous 
         distribution function under <scipy.stats>. If dist is a 
-        function, it must have an interface similar to 
-        <scipy.stats._continuous_distns>.
+        function, it must have an interface similar to <scipy.stats.
+        _continuous_distns>.
     
     bins : int or sequence of scalars, default=10
-        If bins is an int, it defines the number of equal-sample 
-        bins. If bins is a sequence, it defines a monotonically 
-        increasing array of bin edges, including the rightmost edge.
+        If bins is an int, it defines the number of equal-sample bins. 
+        If bins is a sequence, it defines a monotonically increasing 
+        array of bin edges, including the rightmost edge.
 
     Returns
     -------
@@ -280,8 +345,8 @@ def chi2_test(x, dist='norm', bins=10):
             Name of cont. distribution function under <scipy.stats>. 
             
         params : tuple
-            Tuple of output from <scipy.stats.rv_continuous.fit> 
-            i.e. MLEs for shape (if applicable), location, and scale 
+            Tuple of output from <scipy.stats.rv_continuous.fit> i.e. 
+            MLEs for shape (if applicable), location, and scale 
             parameters from data.
           
     References
@@ -293,8 +358,7 @@ def chi2_test(x, dist='norm', bins=10):
     >>> from scipy import stats
     
     Create normal random variable x ~ N(μ,σ) = (2,2).
-    >>> x = stats.norm(loc=2, scale=2).rvs(size=500, 
-    ...                                    random_state=0)
+    >>> x = stats.norm(loc=2, scale=2).rvs(size=500, random_state=0)
     
     H0 : data follows a normal distribution.
     Ha : data does not follow a normal distribution.
@@ -304,17 +368,16 @@ def chi2_test(x, dist='norm', bins=10):
     ...       pvalue=0.9999750744566653, 
     ...       dist='norm', 
     ...       params=(1.9492911213351323, 1.9963135546858515))
-    
-    If α is 5% (0.05), we can not reject the null hypothesis 
-    (0.99 > 0.05). Or we can determine the critical value as 
-    follows:
+   
+    If α is 5% (0.05), we can not reject the null hypothesis (0.99 > 
+    0.05). Or we can determine the critical value as follows:
     
     >>> df = 10 - 1
     >>> cv = chi2.ppf(0.95, df)
     16.9190
     
-    We cannot reject the null hypotheis since χ2 is 0.4773, 
-    which is less than χ2(α=5%, df=10-1) = 16.9190.
+    We cannot reject the null hypotheis since χ2 is 0.4773, which is 
+    less than χ2(α=5%, df=10-1) = 16.9190.
     
     '''
     keys = ['chisq', 'df', 'pvalue', 'dist', 'params']
@@ -338,66 +401,6 @@ def chi2_test(x, dist='norm', bins=10):
                     pvalue=1-stats.chi2.cdf(chisq, df=df), 
                     dist=dist_name, params=params)
 
-def __ContDist__(dist):
-    
-    '''
-    Check and return scipy.stats._continuous_distns
-    
-    .. versionadded:: 30-05-2021
-    
-    Parameters
-    ----------
-    dist : str or function, default="norm"
-        If dist is a string, it defines the name of 
-        continuous distribution function under <scipy.stats>. 
-        If `dist` is a function, it must have an interface 
-        similar to <scipy.stats.rv_continuous>.
-    
-    Returns
-    -------
-    dist : scipy.stats.rv_continuous
-    
-    params : dict
-        Only available when dist is "rv_frozen", otherwise 
-        it defaults to None. params contains shape parameters 
-        required for specified distribution with two keys i.e. 
-        "args" (positional), and "kwds" (keyword).
-    
-    dist_name : str
-        Name of cont. distribution function under <scipy.stats>. 
-    
-    References
-    ----------
-    .. [1] https://docs.scipy.org/doc/scipy/reference/stats.html
-    .. [2] https://docs.scipy.org/doc/scipy/reference/tutorial/
-           stats.html
-   
-    '''
-    # Check whether `dist` is callable or not.
-    if isinstance(dist, str):
-        # Find all continuous distributions in scipy.stats
-        cont_dist = stats.rv_continuous
-        cont_dist = [d for d in dir(stats) 
-                     if isinstance(getattr(stats, d), cont_dist)]
-
-        if dist not in cont_dist:
-            warn(f"There is no <{dist}> under scipy.stats. " 
-                 f"<norm> is used instead.", Warning)
-            dist = getattr(stats, "norm")
-        else: dist = getattr(stats, dist)
-
-    modules = ['_continuous_distns', '_distn_infrastructure']
-    md = dist.__module__.split(".")[-1]
-    if md not in modules:
-        warn(f"{dist} is neither continuous distribution" 
-             f"nor freezing-parameter function from <scipy.stats>." 
-             f" <function scipy.stats.norm> is used instead.", Warning)
-        return getattr(stats, "norm"), None, dist.__dict__['name']
-    elif md == '_distn_infrastructure':
-        dname = dist.__dict__['dist'].__dict__['name']
-        return dist, {'args':dist.args,'kwds':dist.kwds}, dname
-    else: return dist, None, dist.__dict__['name']
-
 def __quantiles__(x:np.ndarray, bins:int=10):
     
     '''Create quantile bins'''
@@ -406,403 +409,59 @@ def __quantiles__(x:np.ndarray, bins:int=10):
     bins[-1] = bins[-1] + np.finfo(float).eps
     return bins
 
-class MatchDist():
-    
-    '''
-    Finding most-fitted distribution given `X`.
-    
-    Parameters
-    ----------
-    dist : list of str or function, default=None
-        If item in dist is a string, it defines the name 
-        of continuous distribution function under 
-        <scipy.stats.rv_continuous>. If item is a function, 
-        it must have an interface similar to <scipy.stats>.
-        If None, it defaults to {"norm", "uniform", "expon", 
-        "chi2", "dweibull", "lognorm", "gamma", "exponpow", 
-        "tukeylambda", "beta"}.
-    
-    bins : int, default=10
-        `bins` defines the number of quantile bins, and is
-        used in "chi2_test", and "ks_test".
-    
-    n_jobs : int, default=None
-        The number of jobs to run in parallel. None means 1. 
-        -1 means using all processors.
-    
-    References
-    ----------
-    .. [1] https://www.itl.nist.gov/div898/handbook/eda/
-           section3/eda366.htm
-    
-    Attributes
-    ----------
-    result : collections.OrderedDict
-        The order of keys is arranged according to input
-        variable. Within each key, there are 3 fields
-        representing method that is used to determine
-        shape of distribution along with its corresponding
-        results, which are:
-        - "chi2": Chi-Square test, <function chi_test>
-        - "ks"  : Kolmogorov-Smirnov test, <function ks_test>
-        - "qq"  : QQ-plot, <function qq_plot>
-
-    info : pd.DataFrame
-        Information table is comprised of:
-        - "variable"    : variable name
-        - "chi2_chisq"  : Chi-Squar test statistic 
-        - "chi2_pvalue" : Chi-Square test p-value
-        - "chi2_dist"   : <scipy.stats.rv_continuous> from 
-                          Chi-Square test
-        - "ks_statistic": Kolmogorov-Smirnov test statistic 
-        - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
-        - "ks_dist"     : <scipy.stats.rv_continuous> from 
-                          Kolmogorov-Smirnov test
-        - "qq_r"        : QQ-plot correlation
-        - "qq_rmse"     : QQ-plot Root Mean Square Error
-        - "qq_dist"     : <scipy.stats.rv_continuous> from 
-                          QQ-plot
-
-    hist : dict
-        The key is variable name and value is <namedtuple>, 
-        "density", whose fields are "hist", "chi2", "ks", 
-        and "qq". In each field, there are also sub-fields, 
-        which are "x", "y", and "label".
-        
-    Examples
-    --------
-    >>> from sklearn.datasets import load_breast_cancer
-    >>> import pandas as pd
-    
-    Use the breast cancer wisconsin dataset 
-    
-    >>> X, y = load_breast_cancer(return_X_y=True)
-    >>> cols = load_breast_cancer().feature_names
-    >>> X = pd.DataFrame(X, columns=cols)
-    
-    Fit model
-    >>> model = MatchDist().fit(X)
-    
-    Information table
-    >>> model.info
-    
-    Result
-    >>> model.result
-    
-    Histogram data
-    >>> model.hist
-    '''
-    def __init__(self, dist=None, bins=10, n_jobs=None):
-        
-        if dist is None:
-            dist = ["norm", "uniform", "expon", "chi2", 
-                    "dweibull", "lognorm", "gamma", "exponpow", 
-                    "tukeylambda", "beta"]
-        self.dist = self.__ScipyFunction__(dist)
-        self.bins = int(__CheckValue__(bins, 'bins', {">":2}))
-        
-        # Number of processors required
-        n_jobs = max(1,n_jobs) if isinstance(n_jobs, int) else 1
-        self.n_jobs = min(n_jobs, multiprocessing.cpu_count())
-           
-    def __ScipyFunction__(self, contdist):
-        
-        '''scipy.stats._continuous_distns'''
-        func = dict()
-        for d in contdist:
-            key_vals = __ContDist__(d)
-            if key_vals not in func.values():
-                func[len(func)] = key_vals
-        return func
-    
-    def __rvfrozen__(self, x, key:str):
-        
-        '''scipy.stats._distn_infrastructure.rv_frozen'''
-        dist, params, _ = self.dist[key]
-        if params is None: dist = dist(*dist.fit(x)) 
-        return dist
-    
-    def args(self, m:collections.OrderedDict):
-        
-        '''Change params format'''
-        params = m._asdict().get('params')['args']
-        return m._replace(params=params)
-        
-    def fit(self, X):
-        
-        '''
-        Fits the model to the dataset `X`.
-        
-        Parameters
-        ----------
-        X : array-like or pd.DataFrame
-            Sample data.
- 
-        Attributes
-        ----------
-        result : collections.OrderedDict
-            The order of keys is arranged according to input
-            variable. Within each key, there are 3 fields
-            representing method that is used to determine
-            shape of distribution along with its corresponding
-            results, which are:
-            - "chi2": Chi-Square test, <function chi_test>
-            - "ks"  : Kolmogorov-Smirnov test, <function ks_test>
-            - "qq"  : QQ-plot, <function qq_plot>
-
-        info : pd.DataFrame
-            Information table is comprised of:
-            - "variable"    : variable name
-            - "chi2_chisq"  : Chi-Squar test statistic 
-            - "chi2_pvalue" : Chi-Square test p-value
-            - "chi2_dist"   : <scipy.stats.rv_continuous> from 
-                              Chi-Square test
-            - "ks_statistic": Kolmogorov-Smirnov test statistic 
-            - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
-            - "ks_dist"     : <scipy.stats.rv_continuous> from 
-                              Kolmogorov-Smirnov test
-            - "qq_r"        : QQ-plot correlation
-            - "qq_rmse"     : QQ-plot Root Mean Square Error
-            - "qq_dist"     : <scipy.stats.rv_continuous> from 
-                              QQ-plot
-
-        hist : dict
-            The key is variable name and value is <namedtuple>, 
-            "density", whose fields are "hist", "chi2", "ks", 
-            and "qq". In each field, there are also sub-fields, 
-            which are "x", "y", and "label".
-        
-        '''
-        # Convert `X` to pd.DataFrame
-        X0 = _to_DataFrame(X).copy()
-        usecols, not_num, min_num = __Valid__(X0)
-        self.X = X0[usecols].copy()
-        X0 = self.X.values.astype(float).copy()
-        self.exclude = {'non_numeric':not_num,
-                        'min_numeric':min_num}
-           
-        # Initialize paramters
-        t = widgets.HTMLMath(value='Initializing . . .')
-        display(widgets.HBox([t])); time.sleep(1)
-        
-        # `collections`
-        result = collections.OrderedDict()
-        method = collections.namedtuple('Methods', ['chi2', 'ks', 'qq'])
-        progress = "Calculating . . . {:,.0%}".format
-        
-        # Set partial functions.
-        part_qq = partial(qq_plot  , bins=self.bins)
-        part_ch = partial(chi2_test, bins=self.bins)
-        rvs_job = Parallel(n_jobs=self.n_jobs)
-        mod_job = Parallel(n_jobs=1)
-        
-        # Loop through all variables and methods.
-        for n in range(X0.shape[1]):
-            x = X0[~np.isnan(X0[:,n]),n]
-            rv_frozen = rvs_job(delayed(self.__rvfrozen__)(x, key) 
-                                for key in self.dist.keys())
-            
-            # QQ-plot
-            outs = [delayed(part_qq)(x, dist=rv) for rv in rv_frozen]
-            qq = self.args(min(mod_job(outs), key=lambda x : x.rmse))
-            
-            # Kolmogorov-Smirnov test
-            outs = [delayed(ks_test)(x, dist=rv) for rv in rv_frozen]
-            ks = self.args(min(mod_job(outs), key=lambda x: x.statistic))
-            
-            # Chi2 test
-            outs = [delayed(part_ch)(x, dist=rv) for rv in rv_frozen]
-            chi2 = self.args(min(mod_job(outs), key=lambda x : x.chisq))
-            
-            result[usecols[n]] = method(chi2, ks, qq)
-            t.value = progress((n+1)/X0.shape[1])
-            
-        # Create attributes
-        self.result = result
-        self.__info__()
-        self.__density__(pd.DataFrame(X0, columns=usecols))
-        
-        t.value = ""
-        return self
-                    
-    def __info__(self):
-            
-        '''
-        Summary of results.
-
-        Attributes
-        ----------
-        info : pd.DataFrame
-            Information table is comprised of:
-            - "variable"    : variable name
-            - "chi2_chisq"  : Chi-Squar test statistic 
-            - "chi2_pvalue" : Chi-Square test p-value
-            - "chi2_dist"   : <scipy.stats.rv_continuous> from 
-                              Chi-Square test
-            - "ks_statistic": Kolmogorov-Smirnov test statistic 
-            - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
-            - "ks_dist"     : <scipy.stats.rv_continuous> from 
-                              Kolmogorov-Smirnov test
-            - "qq_r"        : QQ-plot correlation
-            - "qq_rmse"     : QQ-plot Root Mean Square Error
-            - "qq_dist"     : <scipy.stats.rv_continuous> from 
-                              QQ-plot
-                              
-        '''
-        # Field names
-        fields = {'chi2': ['chisq','pvalue','dist'],
-                  'ks'  : ['statistic','pvalue','dist'],
-                  'qq'  : ['r','rmse','dist']}
-
-        # List of ouputs by variable.
-        info = list()
-        for var in self.result.keys():
-            data = [getattr(self.result[var], m)._asdict()[fld]
-                    for m in fields.keys() 
-                    for fld in fields[m]]
-            info.append([var] + data)
-
-        # Columns
-        cols = ['variable'] + [f'{m}_{fld}' 
-                               for m in fields.keys() 
-                               for fld in fields[m]]
-        self.info = pd.DataFrame(info, columns=cols)
-    
-    def __density__(self, X):
-    
-        '''
-        Probability Density Function plot.
-        
-        Parameters
-        ----------
-        X : array-like or pd.DataFrame
-            Sample data.
-        
-        Attributes
-        ----------
-        hist : dict
-            The key is variable name and value is <namedtuple>, 
-            "density", whose fields are "hist", "chi2", "ks", 
-            and "qq". In each field, there are also sub-fields, 
-            which are "x", "y", and "label".
-            
-        '''
-        # Initialize parameters.
-        self.hist = dict()
-        data = collections.namedtuple('data', ["x","y","label"])
-        density = collections.namedtuple('density',
-                                         ["hist","chi2","ks","qq"])
-
-        for key in self.result.keys():
-        
-            # Histogram of `x`
-            x = X.loc[X[key].notna(), key].values
-            hist, bin_edges = np.histogram(x, "fd")
-            bins = bin_edges[:-1] + np.diff(bin_edges)/2
-            attrs = {"hist": data(x=bin_edges, y=hist, 
-                                  label="histogram")}
-
-            for m in ["chi2","ks","qq"]:
-
-                # Use <scipy.stats> model along with its 
-                # paramerters from self.result .
-                r = getattr(self.result[key], m)
-                params, dist = r.params, getattr(stats, r.dist)
-
-                # Determine probability density from `x`,
-                # and rescale to match with histogram.
-                pdf = dist(*params).pdf(bins)
-                pdf = (pdf-min(pdf))/(max(pdf)-min(pdf))
-                pdf = pdf*(max(hist)-min(hist))+min(hist)
-
-                # Label
-                d_name = getattr(r, 'dist') 
-                stats_ = getattr(r, "pvalue" if m!="qq" else "rmse")
-                label = '{:} ({:}, {:,.4f})'.format(m, d_name, stats_)
-                attrs[m] = data(x=bins, y=pdf, label=label)
-
-            self.hist[key] = density(*attrs.values())
-
-            
-    def plotting(self, var:str, ax=None):
-    
-        '''
-        Function to plot PDF.
-        
-        Parameters
-        ----------
-        var : str
-            Variable name in X.
-
-        ax : Matplotlib axis, default=None
-            If None, `matplotlib.pyplot.axes` is created with 
-            default figsize=(6,3.8).
-        
-        '''
-        kwds = {'chi2' : dict(lw=1.5, marker='o', c='#ee5253', fillstyle='none'),
-                'ks'   : dict(lw=1.5, marker='s', c='#2e86de', fillstyle='none'),
-                'qq'   : dict(lw=1.5, marker='D', c='#10ac84', fillstyle='none'),
-                'hist' : dict(color='#c8d6e5', alpha=0.5)}
-        
-        if ax is None: 
-            ax = plt.subplots(figsize=(6,3.8))[1]
-
-        for fld in self.hist[var]._fields:
-            r = getattr(self.hist[var], fld)
-            kwargs = {**{'label':r.label},**kwds[fld]}
-            if fld=='hist':
-                x = self.X.loc[self.X[var].notna(),var].values
-                ax.hist(x, bins=r.x, **kwargs)
-            else: ax.plot(r.x, r.y, **kwargs)
-
-        ax.legend(loc='best', framealpha=0)
-        ax.set_title(var, fontsize=14, fontweight ="bold")
-        ax.set_ylabel('Numer of Counts', fontweight ="bold")
-           
 class UnivariateOutliers():
       
     '''
-    This function determines lower and upper bounds on 
-    a variable, where any point that lies either below or 
-    above those points is identified as outlier. Once 
-    identified, such outlier is then capped at a certain 
-    value above the upper bound or floored below the lower 
-    bound.
+    This function determines lower and upper bounds on a variable, 
+    where any point that lies either below or above those points is 
+    identified as outlier. Once identified, such outlier is then 
+    capped at a certain value above the upper bound or floored below 
+    the lower bound.
 
     1) Percentile : (α, 100-α)
-    2) Sigma : (μ-β.σ , μ+β.σ)
+    2) Sigma : (μ-β.σ, μ+β.σ)
     3) Interquartile Range : (Q1-β.IQR, Q3+β.IQR)
-    4) Grubbs' test (Grubbs 1969 and Stefansky 1972) 
-    5) Generalized Extreme Studentized Deviate (GESD)
-    6) Median Absolute Deviation (MAD)
-    7) Mean Absolute Error (MAE)
+    4) Grubbs' test (Grubbs 1969 and Stefansky 1972) [1] 
+    5) Generalized Extreme Studentized Deviate (GESD) [2,3]
+    6) Median Absolute Deviation (MAD) [4]
+    7) Mean Absolute Error (MAE) [5]
     
     .. versionadded:: 30-05-2021
     
+    References
+    ----------
+    .. [1] https://www.itl.nist.gov/div898/handbook/eda/section3/eda35h1.htm
+    .. [2] https://www.itl.nist.gov/div898/handbook/eda/section3/eda35h3.htm
+    .. [3] https://towardsdatascience.com/anomaly-detection-with-generalized
+           -extreme-studentized-deviate-in-python-f350075900e2
+    .. [4] https://www.itl.nist.gov/div898/handbook/eda/section3/eda35h.htm
+    .. [5] https://stats.stackexchange.com/questions/339932/iglewicz-and-
+           hoaglin-outlier-test-with-modified-z-scores-what-should-i-do-if-t
+
     Parameters
     ----------
     method : list of str, default=None
-        Method of capping outliers i.e. {'iqr', 'mad', 'grubb', 
-        'mae', 'sigma', 'gesd', 'pct'}. If None, it defaults
-        to all methods available.
+        Method of capping outliers i.e. {'iqr', 'mad', 'grubb', 'mae', 
+        'sigma', 'gesd', 'pct'}. If None, it defaults to all methods 
+        available.
     
     pct_alpha : float, default=0.01
-        It refers to the likelihood that the population lies  
-        outside the confidence interval, used in "Percentile".
+        It refers to the likelihood that the population lies  outside 
+        the confidence interval, used in "Percentile".
 
     beta_sigma : float, default=3.0
-        It refers to amount of standard deviations away from 
-        its mean, used in "Sigma".
+        It refers to amount of standard deviations away from its mean, 
+        used in "Sigma".
 
     beta_iqr : float, default=1.5
         Muliplier of IQR (InterQuartile Range).
 
     grubb_alpha : float, default=0.05
-        The significance level, α of Two-sided test, used in
-        "Grubbs' test".
+        The significance level, α of Two-sided test, used in "Grubbs' 
+        test".
   
     gsed_alpha : float, default=0.05
-        The significance level, α of Two-sided test, used in
+        The significance level, α of Two-sided test, used in 
         "Generalized Extreme Studentized Deviate", (GSED).
 
     mad_zscore : float, default=3.5
@@ -833,13 +492,12 @@ class UnivariateOutliers():
 
     capped_X : pd.DataFrame
         Capped variables.
-
+    
     exclude : dict
         Excluded variables.
         - non_numeric : List of non-numeric variables.
-        - min_numeric : List of variables with number of 
-                        numerical values less than defined 
-                        threshold.
+        - min_numeric : List of variables with number of numerical 
+                        values less than defined threshold.
         
     Examples
     --------
@@ -880,7 +538,6 @@ class UnivariateOutliers():
                                            func.keys())(*func.values())
 
         # Univariate-outlier Parameters 
-        # elements are arranged in the same order as `func_`
         r_values = [(beta_sigma , 'beta_sigma' , {'>':0, '<':100}),
                     (beta_iqr   , 'beta_iqr'   , {'>':0, '<':100}),
                     (pct_alpha  , 'pct_alpha'  , {'>':0, '<':0.5}),
@@ -938,17 +595,15 @@ class UnivariateOutliers():
         exclude : dict
             Excluded variables.
             - non_numeric : List of non-numeric variables.
-            - min_numeric : List of variables with number of 
-                            numerical values less than defined 
-                            threshold.
+            - min_numeric : List of variables with number of numerical 
+                            values less than defined threshold.
         
         '''
         # Convert `X` to pd.DataFrame
         X0 = _to_DataFrame(X).copy()
         usecols, not_num, min_num = __Valid__(X0)
         X0 = X0[usecols].values.astype(float)
-        self.exclude = {'non_numeric':not_num,
-                        'min_numeric':min_num}
+        self.exclude = {'non_numeric':not_num, 'min_numeric':min_num}
   
         # Initialize paramters
         keys = ['var', 'method', 'lower', 'upper']
@@ -989,6 +644,7 @@ class UnivariateOutliers():
             - "p_outlier": % of total # of outliers
         
         '''
+        
         cols=['variable', 'lower', 'upper']
         info = pd.DataFrame([[m.var, m.lower, m.upper] for i,m in 
                              self.limits.items()], columns=cols)
@@ -1027,11 +683,11 @@ class UnivariateOutliers():
 def __Valid__(X, min_n=10, raise_warning=True):
     
     '''
-    Determine variables, whose properties must satisfy
-    following criteria: 
+    ** Private Function **
+    Determine variables, whose properties must satisfy following 
+    criteria: 
     [1] Data must be numeric or logical, and
-    [2] Data must contain numerical values more than 
-        `min_n` records.
+    [2] Data must contain numerical values more than `min_n` records.
     
     Parameters
     ----------
@@ -1048,8 +704,8 @@ def __Valid__(X, min_n=10, raise_warning=True):
     -------
     - usecol  : List of valid variables.
     - not_num : List of non-numeric variables.
-    - min_num : List of variables with number of numerical 
-                values less than defined threshold.
+    - min_num : List of variables with number of numerical values less 
+                than defined threshold.
                 
     '''
     # Convert dtype to `float`
@@ -1061,8 +717,9 @@ def __Valid__(X, min_n=10, raise_warning=True):
     not_num = list(set(X0.columns[X0.dtypes.values==object]))
     if len(not_num)>0:
         if raise_warning:
-            warn(f'Data variables must be numerical. ' 
-                 f'List of non-numerical variables: {not_num}')
+            message = (f'Data variables must be numerical. '
+                       f'List of non-numerical variables: {not_num}')
+            warn(message)
     usecol = list(set(list(X0)).difference(not_num))
   
     X0 = X0.loc[:,usecol].copy()
@@ -1070,15 +727,18 @@ def __Valid__(X, min_n=10, raise_warning=True):
                                   .sum(axis=0)<min_n]))
     if len(min_num)>0:
         if raise_warning:
-            warn(f'Data variables must contain numerical ' 
-                 f'values more than {min_n} records. ' 
-                 f'List of invalid variables: {min_num}')
+            message = (f'Data variables must contain numerical ' 
+                       f'values more than {min_n} records. List ' 
+                       f'of invalid variables: {min_num}')
+            warn(message)
     usecol = list(set(list(X0)).difference(min_num))
+    
     return usecol, not_num, min_num
     
 def __Getkwargs__(func):
     
     '''
+    ** Private Function **
     Get positional argument(s) from function.
     
     Parameters
@@ -1087,8 +747,8 @@ def __Getkwargs__(func):
     
     Returns
     -------
-    Distionary of parameter names in positional 
-    arguments and their default value.
+    Distionary of parameter names in positional arguments and their 
+    default value.
     
     '''
     # Get all parameters from `func`.
@@ -1099,8 +759,9 @@ def __Getkwargs__(func):
 def __CheckValue__(x, var='x', r={">":-np.inf,"<": np.inf}) -> float:
     
     '''
-    Validate input value (x) whether it satisfies 
-    the condition (r). If False, error is raised.
+    ** Private Function **
+    Validate input value (x) whether it satisfies the condition (r). 
+    If False, error is raised.
     '''
     fnc = {"==" : [np.equal, "="], 
            "!=" : [np.not_equal, "≠"], 
@@ -1110,31 +771,26 @@ def __CheckValue__(x, var='x', r={">":-np.inf,"<": np.inf}) -> float:
            "<=" : [np.less_equal, "≤"]}
 
     if not isinstance(x, numbers.Number):
-        raise ValueError(f'{var} must be numeric. '
-                         f'Got {type(x)} instead.')
+        raise ValueError(f'{var} must be numeric. Got {type(x)} instead.')
     elif sum([fnc[k][0](x, r[k]) for k in r.keys()])!=len(r):
         s = ' & '.join([f'{fnc[k][1]} {r[k]}' for k in r.keys()])
         raise ValueError(f'{var} must be {s}. Got {x} instead.')
     else: return x
 
-def _to_DataFrame(X) -> pd.DataFrame:
+def _to_DataFrame(X:pd.DataFrame) -> pd.DataFrame:
     
     '''
-    If `X` is not `pd.DataFrame`, column(s) will be
-    automatically created with "Unnamed" format.
+    ** Private Function **
+    If `X` is not `pd.DataFrame`, column(s) will be automatically 
+    created with "Unnamed" format.
     
     Parameters
     ----------
     X : array-like or pd.DataFrame
     
-    Returns
-    -------
-    pd.DataFrame
-    
     '''
     if not (hasattr(X,'shape') or hasattr(X,'__array__')):
-        raise TypeError(f'Data must be array-like. ' 
-                        f'Got {type(X)} instead.')
+        raise TypeError(f'Data must be array-like. Got {type(X)} instead.')
     elif isinstance(X, pd.Series):
         return pd.DataFrame(X)
     elif not isinstance(X, pd.DataFrame):
@@ -1146,43 +802,47 @@ def _to_DataFrame(X) -> pd.DataFrame:
         return pd.DataFrame(X, columns=columns)
     return X
 
-def __iqr__(x:np.ndarray, beta=1.5) -> Tuple[float,float]:
+def __iqr__(x, beta=1.5) -> Tuple[float,float]:
 
     '''
-    lower and upper bounds from sample median 
-    (interquartile range).
+    ** Private Function **
+    lower and upper bounds from sample median (interquartile range).
+    
     '''
     q1, q3 = np.nanpercentile(x, q=[25,75])
     return q1-(q3-q1)*beta, q3+(q3-q1)*beta
     
-def __sigma__(x:np.ndarray, beta:float=3) -> Tuple[float,float]:
+def __sigma__(x, beta=3) -> Tuple[float,float]:
 
     '''
-    lower and upper bounds from sample mean 
-    (standard deviation).
+    ** Private Function **
+    lower and upper bounds from sample mean (standard deviation).
+    
     '''
     mu, sigma = np.nanmean(x), np.nanstd(x)
     return mu-beta*sigma, mu+beta*sigma
   
-def __pct__(x:np.ndarray, a:float=0.01) -> Tuple[float,float]:
+def __pct__(x, a=0.01) -> Tuple[float,float]:
 
     '''
-    lower and upper bounds from sample median
-    (percentile).
+    ** Private Function **
+    lower and upper bounds from sample median (percentile).
+    
     '''
     q = [a*100, 100-a*100]
     return tuple(np.nanpercentile(x, q))
 
-def __grubb__(x:np.ndarray, a:float=0.05) -> Tuple[float,float]:
+def __grubb__(x, a=0.05) -> Tuple[float,float]:
     
     '''
-    lower and upper bounds from sample mean
-    (Grubbs' Test).
+    ** Private Function **
+    lower and upper bounds from sample mean (Grubbs' Test).
     
     References
     ----------
-    .. [1] https://www.itl.nist.gov/div898/handbook/eda/
-           section3/eda35h1.htm
+    .. [1] https://www.itl.nist.gov/div898/handbook/eda/section3/
+           eda35h1.htm
+           
     '''
     N = len(x); df = N-2
     ct = stats.t.ppf(a/(2*N), df)
@@ -1190,18 +850,19 @@ def __grubb__(x:np.ndarray, a:float=0.05) -> Tuple[float,float]:
     mu, sigma = np.nanmean(x), np.nanstd(x)
     return mu-G*sigma, mu+G*sigma
 
-def __gesd__(x:np.ndarray, a:float=0.05) -> Tuple[float,float]:
+def __gesd__(x, a=0.05) -> Tuple[float,float]:
     
     '''
+    ** Private Function **
     Generalized Extreme Studentized Deviate
     
     References
     ----------
-    .. [1] https://www.itl.nist.gov/div898/handbook/eda/
-           section3/eda35h3.htm
-    .. [2] https://towardsdatascience.com/anomaly-
-           detection-with-generalized-extreme-studentized-
-           deviate-in-python-f350075900e2
+    .. [1] https://www.itl.nist.gov/div898/handbook/eda/section3/
+           eda35h3.htm
+    .. [2] https://towardsdatascience.com/anomaly-detection-with-
+           generalized-extreme-studentized-deviate-in-python-f350075900e2
+           
     '''
     x0, i = x.copy(), 1
     while True:
@@ -1212,34 +873,37 @@ def __gesd__(x:np.ndarray, a:float=0.05) -> Tuple[float,float]:
         else: break
     return min(x0), max(x0)
 
-def __gesdRstat__(x:np.ndarray) -> Tuple[float,int]:
+def __gesdRstat__(x) -> Tuple[float,int]:
     
     '''
+    ** Private Function **
     GESD's r test statistics
     '''
     dev = abs(x-np.mean(x))
     r_stat = max(dev)/max(np.std(x),np.finfo(float).eps)
     return r_stat, np.argmax(dev)
 
-def __lambda__(x:np.ndarray, a:float=0.05) -> float:
+def __lambda__(x, a=0.05) -> float:
     
     '''
-    Corresponding to the r test statistics, 
-    r critical value is computed as follows:
+    ** Private Function **
+    r critical value is computed given the r test statistics.
+    
     '''
     N = len(x); df = N-2
     ct = stats.t.ppf(1-a/(2*N),df)
     return (N-1)/np.sqrt(N)*np.sqrt(ct**2/(ct**2+df))
 
-def __mad__(x:np.ndarray, cv:float=3.5) -> Tuple[float,float]:
+def __mad__(x, cv=3.5) -> Tuple[float,float]:
     
     '''
+    ** Private Function **
     Median Absolute Deviation (MAD)
     
     References
     ----------
-    .. [1] https://www.itl.nist.gov/div898/handbook/eda/
-           section3/eda35h.htm
+    .. [1] https://www.itl.nist.gov/div898/handbook/eda/section3/
+           eda35h.htm    
     '''
     # Calculate modified Z-score.
     z = (x-np.mean(x))/max(np.std(x),np.finfo(float).eps)
@@ -1247,21 +911,21 @@ def __mad__(x:np.ndarray, cv:float=3.5) -> Tuple[float,float]:
     MAD, mz = np.median(div), np.full(len(x),0.)
     if MAD>0: mz = 0.6745*(z-np.median(z))/MAD 
     
-    # Select x, whose absolute modified Z-score 
-    # stays within critical value.
+    # Select x, whose absolute modified Z-score stays within critical value.
     x0 = np.delete(x, np.arange(len(x))[abs(mz)>cv])
     return min(x0), max(x0)
 
-def __mae__(x:np.ndarray, cv:float=3.5) -> Tuple[float,float]:
+def __mae__(x, cv=3.5) -> Tuple[float,float]:
     
     '''
+    ** Private Function **
     Mean Absolute Error (MAE)
     
     References
     ----------
-    .. [1] https://stats.stackexchange.com/questions/339932/
-           iglewicz-and-hoaglin-outlier-test-with-modified-
-           z-scores-what-should-i-do-if-t     
+    .. [1] https://stats.stackexchange.com/questions/339932/iglewicz-
+           and-hoaglin-outlier-test-with-modified-z-scores-what-should
+           -i-do-if-t     
     '''
     # Calculate modified Z-score.
     z = (x-np.mean(x))/max(np.std(x),np.finfo(float).eps)
@@ -1269,58 +933,67 @@ def __mae__(x:np.ndarray, cv:float=3.5) -> Tuple[float,float]:
     MAE, mz = np.mean(div) ,np.full(len(x),0.)
     if MAE>0: mz = (z-np.median(z))/(1.253314*MAE)
     
-    # Select x, whose absolute modified Z-score 
-    # stays within critical value.
+    # Select x, whose absolute modified Z-score stays within critical value.
     x0 = np.delete(x, np.arange(len(x))[abs(mz)>cv])
     return min(x0), max(x0)
 
-class DescStatsPlot():
+class MatchDist():
     
     '''
-    Plot descriptive statistics from <Descriptive>.
+    Finding most-fitted distribution given `X`.
     
     Parameters
     ----------
-    X : pd.DataFrame
-        Input array.
+    dist : list of str or function, default=None
+        If item in dist is a string, it defines the name of continuous 
+        distribution function under <scipy.stats.rv_continuous>. If 
+        item is a function, it must have an interface similar to 
+        <scipy.stats>. If None, it defaults to {"norm", "uniform", 
+        "expon", "chi2", "dweibull", "lognorm", "gamma", "exponpow", 
+        "tukeylambda", "beta"}.
     
-    num_info : collections.OrderedDict
-        An attribute from <Descriptive.fit>.
+    bins : int, default=20
+        `bins` defines the number of quantile bins, and is used in 
+        "chi2_test", and "ks_test".
     
-    bw_method : str, scalar or callable, default=0.1
-        The method used to calculate the estimator bandwidth. 
-        If a scalar, this will be used directly as kde.factor. 
-        If a callable, it should take a gaussian_kde instance 
-        as only parameter and return a scalar. If None, "scott"
-        is used. See References for more details.
+    n_jobs : int, default=None
+        The number of jobs to run in parallel. None means 1. -1 means 
+        using all processors.
     
-    use_hist : bool, default=False
-        If True, <ax.hist> is used, otherwise <ax.fill_between>.
-        Not available when y is provided.
-        
-    bins : int or sequence of scalars or str, default=None
-        `bins` defines the method used to calculate the optimal 
-        bin width, as defined by <numpy.histogram>. If None, it
-        defaults to "fd".
-        
-    show_vline : bool, default=True
-        If True, it shows 4 vertical lines across the Axes i.e.
-        1st quartile, 2nd quartile, 3rd quartile, and mean. 
-        Not available when y is provided.
-
-    show_bound : bool, default=True
-        If True, it shows lower and upper bounds of outliers.
-        Not available when y is provided.
-        
-    show_stats : bool, default=True
-        If True, it shows decriptive statistics on the side of 
-        the plot. 
-            
     References
     ----------
-    .. [1] https://docs.scipy.org/doc/scipy/reference/generated/
-           scipy.stats.gaussian_kde.html
-           
+    .. [1] https://www.itl.nist.gov/div898/handbook/eda/section3/
+           eda366.htm
+    
+    Attributes
+    ----------
+    result : collections.OrderedDict
+        The order of keys is arranged according to input variable. 
+        Within each key, there are 3 fields representing method that 
+        is used to determine shape of distribution along with its 
+        corresponding results, which are:
+        - "chi2": Chi-Square test, <function chi_test>
+        - "ks"  : Kolmogorov-Smirnov test, <function ks_test>
+        - "qq"  : QQ-plot, <function qq_plot>
+
+    info : pd.DataFrame
+        Information table is comprised of:
+        - "variable"    : variable name
+        - "chi2_chisq"  : Chi-Squar test statistic 
+        - "chi2_pvalue" : Chi-Square test p-value
+        - "chi2_dist"   : scipy.stats.rv_continuous
+        - "ks_statistic": Kolmogorov-Smirnov test statistic 
+        - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
+        - "ks_dist"     : scipy.stats.rv_continuous
+        - "qq_r"        : QQ-plot correlation
+        - "qq_rmse"     : QQ-plot Root Mean Square Error
+        - "qq_dist"     : scipy.stats.rv_continuous
+    
+    hist : dict
+        The key is variable name and value is <namedtuple>, "density", 
+        whose fields are "hist", "chi2", "ks", and "qq". In each field, 
+        there are also sub-fields, which are "x", "y", and "label".
+        
     Examples
     --------
     >>> from sklearn.datasets import load_breast_cancer
@@ -1332,225 +1005,1199 @@ class DescStatsPlot():
     >>> cols = load_breast_cancer().feature_names
     >>> X = pd.DataFrame(X, columns=cols)
     
-    Get "num_info" from "Descriptive"
-    >>> num_info = Descriptive().fit(X).num_info_
+    Fit model
+    >>> model = MatchDist().fit(X)
     
-    Plot "worst smoothness"
-    >>> model = DescStatsPlot(X, num_info)
-    >>> model.plotting("worst smoothness")
-    >>> plt.tight_layout()
-    >>> plt.show()
+    Information table
+    >>> model.info
     
+    Result
+    >>> model.result
+    
+    Histogram data
+    >>> model.hist
     '''
-    def __init__(self, X, num_info, 
-                 bins = None, 
-                 bw_method = 0.1, 
-                 use_hist = False, 
-                 show_vline = True, 
-                 show_stats = True, 
-                 show_bound = True):
-
-        self.X = X.copy()
-        self.num_info = num_info
-        self.bins = "fd" if bins is None else bins
-        self.bw_method = bw_method
-        self.use_hist = use_hist
-        self.show_vline = show_vline 
-        self.show_stats = show_stats
-        self.show_bound = show_bound
+    def __init__(self, dist=None, bins=20, n_jobs=None):
+        
+        if dist is None:
+            dist = ["norm", "uniform", "expon", "chi2", 
+                    "dweibull", "lognorm", "gamma", "exponpow", 
+                    "tukeylambda", "beta"]
+        self.dist = self.__ScipyFunction__(dist)
+        self.bins = int(__CheckValue__(bins, 'bins', {">":2}))
+        
+        # Number of processors required
+        n_jobs = max(1,n_jobs) if isinstance(n_jobs, int) else 1
+        self.n_jobs = min(n_jobs, multiprocessing.cpu_count())
+           
+    def __ScipyFunction__(self, contdist):
+        
+        '''scipy.stats._continuous_distns'''
+        func = dict()
+        for d in contdist:
+            key_vals = __ContDist__(d)
+            if key_vals not in func.values():
+                func[len(func)] = key_vals
+        return func
     
-    def plotting(self, var, ax=None, xlim=None, y=None):
+    def __rvfrozen__(self, x, key:str):
+        
+        '''scipy.stats._distn_infrastructure.rv_frozen'''
+        dist, params, _ = self.dist[key]
+        if params is None: dist = dist(*dist.fit(x)) 
+        return dist
+    
+    def args(self, m:collections.OrderedDict):
+        
+        '''Change params format'''
+        params = m._asdict().get('params')['args']
+        return m._replace(params=params)
+        
+    def fit(self, X):
         
         '''
-        Plot histogram
+        Fits the model to the dataset `X`.
         
         Parameters
         ----------
-        var : str
-            Variable name in X.
+        X : array-like or pd.DataFrame
+            Sample data.
+ 
+        Attributes
+        ----------
+        result : collections.OrderedDict
+            The order of keys is arranged according to input variable. 
+            Within each key, there are 3 fields representing method that 
+            is used to determine shape of distribution along with its 
+            corresponding results, which are:
+            - "chi2": Chi-Square test, <function chi_test>
+            - "ks"  : Kolmogorov-Smirnov test, <function ks_test>
+            - "qq"  : QQ-plot, <function qq_plot>
 
-        ax : Matplotlib axis, default=None
-            If None, `matplotlib.pyplot.axes` is created with 
-            default figsize=(8,3.8).
+        info : pd.DataFrame
+            Information table is comprised of:
+            - "variable"    : variable name
+            - "chi2_chisq"  : Chi-Squar test statistic 
+            - "chi2_pvalue" : Chi-Square test p-value
+            - "chi2_dist"   : scipy.stats.rv_continuous
+            - "ks_statistic": Kolmogorov-Smirnov test statistic 
+            - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
+            - "ks_dist"     : scipy.stats.rv_continuous
+            - "qq_r"        : QQ-plot correlation
+            - "qq_rmse"     : QQ-plot Root Mean Square Error
+            - "qq_dist"     : scipy.stats.rv_continuous
             
-        xlim : tuple(float,float), default=None
-            It is the x-axis view limits (left,right), If None, 
-            it leaves the limit unchanged.
+        hist : dict
+            The key is variable name and value is <namedtuple>, "density", 
+            whose fields are "hist", "chi2", "ks", and "qq". In each field, 
+            there are also sub-fields, which are "x", "y", and "label".
+        
+        '''
+        # Convert `X` to pd.DataFrame
+        X0 = _to_DataFrame(X).copy()
+        usecols, not_num, min_num = __Valid__(X0)
+        self.X = X0[usecols].copy()
+        X0 = self.X.values.astype(float).copy()
+        self.exclude = {'non_numeric':not_num, 'min_numeric':min_num}
+           
+        # Initialize paramters
+        t = widgets.HTMLMath(value='Initializing . . .')
+        display(widgets.HBox([t])); time.sleep(1)
+        
+        # `collections`
+        result = collections.OrderedDict()
+        method = collections.namedtuple('Methods', ['chi2', 'ks', 'qq'])
+        progress = "Calculating . . . {:,.0%}".format
+        
+        # Set partial functions.
+        part_qq = partial(qq_plot  , bins=self.bins)
+        part_ch = partial(chi2_test, bins=self.bins)
+        rvs_job = Parallel(n_jobs=self.n_jobs)
+        mod_job = Parallel(n_jobs=1)
+        
+        # Loop through all variables and methods.
+        for n in range(X0.shape[1]):
+            x = X0[~np.isnan(X0[:,n]),n]
+            rv_frozen = rvs_job(delayed(self.__rvfrozen__)(x, key) 
+                                for key in self.dist.keys())
             
-        y : array-like of shape X.shape[0], default=None
-            An array of labels (int).
+            # QQ-plot
+            outs = [delayed(part_qq)(x, dist=rv) for rv in rv_frozen]
+            qq = self.args(min(mod_job(outs), key=lambda x : x.rmse))
+            
+            # Kolmogorov-Smirnov test
+            outs = [delayed(ks_test)(x, dist=rv) for rv in rv_frozen]
+            ks = self.args(min(mod_job(outs), key=lambda x: x.statistic))
+            
+            # Chi2 test
+            outs = [delayed(part_ch)(x, dist=rv) for rv in rv_frozen]
+            chi2 = self.args(min(mod_job(outs), key=lambda x : x.chisq))
+            
+            result[usecols[n]] = method(chi2, ks, qq)
+            t.value = progress((n+1)/X0.shape[1])
+            
+        # Create attributes
+        self.result = result
+        self.__info__()
+        self.__density__(pd.DataFrame(X0, columns=usecols))
+        
+        t.value = ""
+        return self
+                    
+    def __info__(self):
             
         '''
-        if ax is None: 
-            ax = plt.subplots(figsize=(8,3.8))[1] 
+        Summary of results.
+
+        Attributes
+        ----------
+        info : pd.DataFrame
+            Information table is comprised of:
+            - "variable"    : variable name
+            - "chi2_chisq"  : Chi-Squar test statistic 
+            - "chi2_pvalue" : Chi-Square test p-value
+            - "chi2_dist"   : scipy.stats.rv_continuous 
+            - "ks_statistic": Kolmogorov-Smirnov test statistic 
+            - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
+            - "ks_dist"     : scipy.stats.rv_continuous
+            - "qq_r"        : QQ-plot correlation
+            - "qq_rmse"     : QQ-plot Root Mean Square Error
+            - "qq_dist"     : scipy.stats.rv_continuous
+                              
+        '''
+        # Field names
+        fields = {'chi2': ['chisq','pvalue','dist'],
+                  'ks'  : ['statistic','pvalue','dist'],
+                  'qq'  : ['r','rmse','dist']}
+
+        # List of ouputs by variable.
+        info = list()
+        for var in self.result.keys():
+            data = [getattr(self.result[var], m)._asdict()[fld]
+                    for m in fields.keys() for fld in fields[m]]
+            info.append([var] + data)
+
+        # Columns
+        cols = [f'{m}_{fld}' for m in fields.keys() for fld in fields[m]]
+        self.info = pd.DataFrame(info, columns=['variable'] + cols)
+    
+    def __density__(self, X):
+    
+        '''
+        Probability Density Function plot.
+        
+        Parameters
+        ----------
+        X : array-like or pd.DataFrame
+            Sample data.
+        
+        Attributes
+        ----------
+        hist : dict
+            The key is variable name and value is <namedtuple>, "density", 
+            whose fields are "hist", "chi2", "ks", and "qq". In each field, 
+            there are also sub-fields, which are "x", "y", and "label".
             
-        dStats = self.num_info[var]
-        x = self.X.loc[self.X[var].notna(), var].values.copy()
-        if y is None:
-            self.__histpdf__(ax, x, dStats, self.bins, 
-                             self.bw_method, self.use_hist)
-            if self.show_bound: self.__axvline__(ax, dStats)
-        else:
-            nonan = np.array(y)[self.X[var].notna()].copy()
-            self.__yhistpdf__(ax, x, nonan, var, self.bw_method)
+        '''
+        # Initialize parameters.
+        self.hist = dict()
+        data = collections.namedtuple('data', ["x", "y", "label"])
+        density = collections.namedtuple('density', ["hist", "chi2", "ks", "qq"])
+
+        for key in self.result.keys():
         
-        if self.show_stats: self.__decstat__(ax, dStats)
-        ax.set_title(var, fontsize=14, fontweight ="bold")
-        if isinstance(xlim, tuple): ax.set_xlim(*xlim)
-            
-    def __histpdf__(self, ax, x, dStats, bins="fd",
-                    bw_method=0.1, use_hist=False):
+            # Histogram of `x`
+            x = X.loc[X[key].notna(), key].values
+            hist, bin_edges = np.histogram(x, self.bins)
+            bins = bin_edges[:-1] + np.diff(bin_edges)/2
+            attrs = {"hist": data(x=bin_edges, y=hist, label="histogram")}
 
-        '''Probability Desnsity Function'''
-        kwargs = {"hist"  : dict(color="#d1d8e0", bins=bins, alpha=0.5), 
-                  "kde"   : dict(color="#4b6584", lw=3),
-                  "mean"  : dict(color="#eb3b5a", lw=2),
-                  "quant" : dict(color="#3867d6", lw=2), 
-                  "left"  : dict(xytext=(-4,0), textcoords="offset points",  
-                                 va='center', ha='right', fontsize=14),
-                  "right" : dict(xytext=(4,0), textcoords="offset points",
-                                 va='center', ha='left', fontsize=14)}
+            for m in ["chi2", "ks", "qq"]:
 
-        # Histogram and pdf (kde).
-        hist   = np.histogram(x, bins=bins)[0]
-        kernel = stats.gaussian_kde(x, bw_method=bw_method)
-        unq_x  = np.unique(x)
-        pdf    = kernel.pdf(unq_x)
+                # Use <scipy.stats> model along with its paramerters 
+                # from self.result .
+                r = getattr(self.result[key], m)
+                params, dist = r.params, getattr(stats, r.dist)
 
-        # Plot histogram and pdf.
-        y = self.__rescale__(pdf, hist)
-        ax.plot(unq_x, y, **kwargs['kde'])
-        if use_hist: ax.hist(x, **kwargs['hist'])
-        else: ax.fill_between(unq_x, y, color="#d1d8e0")
-        
-        if self.show_vline:
-            criteria = [("pct25", r"$Q_{1}$", "left" , "quant"),
-                        ("pct50", r"$Q_{2}$", "right", "quant"),
-                        ("pct75", r"$Q_{3}$", "right", "quant"),
-                        ("mean" , r"$\mu$"  , "left" , "mean" )]
+                # Determine probability density from `x`, and rescale 
+                # to match with histogram.
+                pdf = dist(*params).pdf(bins)
+                pdf = (pdf - min(pdf))/(max(pdf) - min(pdf))
+                pdf = pdf*(max(hist) - min(hist)) + min(hist)
 
-            for (fld,s,k0,k1) in criteria:
-                x = getattr(dStats, fld)
-                y = self.__rescale__(pdf, hist, kernel.pdf(x))[0]
-                ax.plot((x,)*2, [0,y], **kwargs[k1])
-                ax.annotate(s, (x, y/2), **{**kwargs[k0],
-                                            **{'color':kwargs[k1]["color"]}})
+                # Label
+                d_name = getattr(r, 'dist') 
+                stats_ = getattr(r, "pvalue" if m!="qq" else "rmse")
+                label = '{:} ({:}, {:,.4f})'.format(m, d_name, stats_)
+                attrs[m] = data(x=bins, y=pdf, label=label)
 
-        ax.set_ylim(0, ax.get_ylim()[1]*1.1)
-        ax.set_ylabel('Numer of Counts', fontweight ="bold") 
+            self.hist[key] = density(*attrs.values())
+
+    def plotting(self, var=None, methods=None, ax=None, 
+                 colors=None, tight_layout=True):
     
-    def __yhistpdf__(self, ax, x, y, var, bw_method=0.1):
+        '''
+        Function to plot PDF.
 
-        '''Probability Desnsity Function by class'''
-        strfmt = "{} = {:,.0f} ({:,.0%})".format
-        labels, cnts = np.unique(y, return_counts=True)
-        bins = np.histogram(x, bins="fd")[1]
-        
-        for c,n in zip(labels,cnts):
-            dataset= x[y==c]
-            kernel = stats.gaussian_kde(dataset, bw_method)
-            hist   = np.histogram(dataset, bins)[0]/len(dataset)
-            unq_x  = np.unique(dataset)
-            pdf    = kernel.pdf(unq_x)
-            
-            # Plot histogram and pdf.
-            spdf = self.__rescale__(pdf, [0,max(hist)])
-            ax.plot(unq_x, pdf, lw=2)
-            ax.fill_between(unq_x, pdf, alpha=0.2, 
-                            label= strfmt(c,n,n/len(y)))
-  
-        ax.legend(loc='best', framealpha=0, fontsize=10)
-        ax.set_yticks([])
-        ax.set_yticklabels([])
-        
-        for spine in ["right","left","top"]:
-            ax.spines[spine].set_visible(False)
+        Parameters
+        ----------
+        var : str, default=None
+            Variable name in `hist`. If None, the first key is selected.
 
-    def __axvline__(self, ax, dStats):
+        methods : list of str, default=None 
+            List of statistical methods i.e. "chi2", "ks", and "qq". If
+            None, all are selected.
 
-        '''Plot ax.axvline'''
-        # Initial parameters
-        x_min, x_max = ax.get_xlim()
-        y_min, y_max = ax.get_ylim()
+        ax : Matplotlib axis object, default=None
+            Predefined Matplotlib axis. If None, `ax` is created with 
+            default figsize.
 
-        # Descriptive statistics
-        mu, std = dStats.mean, dStats.std
-        lower, upper = dStats.lower, dStats.upper
-        p25, p75, iqr =  dStats.pct25, dStats.pct75, dStats.iqr
-        out_lines = [(r" Upper " , upper, "#4b6584", (0,-5)), 
-                     (r" Lower " , lower, "#4b6584", (0,-5)),
-                     (r" $\mu+3\sigma$ ", mu + 3*std, "#eb3b5a", (0,-45)),
-                     (r" $\mu-3\sigma$ ", mu - 3*std ,"#eb3b5a", (0,-45)),
-                     (r" $Q_{3}+1.5(IQR)$ ", p75 + 1.5*iqr, "#3867d6", (0,-85)),
-                     (r" $Q_{1}-1.5(IQR)$ ", p25 - 1.5*iqr, "#3867d6", (0,-85))]  
+        colors : list of color-hex, default=None
+            Number of color-hex must be greater than or equal to 3. If 
+            None, it uses default colors from Matplotlib.
 
-        # Keyword arguments
-        out_kwargs = dict(textcoords="offset points", xytext=(0,0), 
-                          va='top', ha='center', fontsize=10, rotation=-90,
-                          bbox=dict(facecolor='white', pad=0, ec='none'))
+        tight_layout : bool, default=True
+            If True, it adjusts the padding between and around subplots 
+            i.e. plt.tight_layout().
 
-        for (s,v,c,xy) in out_lines:
-            if (x_min < v < x_max):
-                ax.axvline(v, lw=1, ls='--', color=c)
-                ax.annotate(s, (v,y_max), **{**out_kwargs, 
-                                             **dict(color=c, xytext=xy)})
+        Returns
+        -------
+        ax : Matplotlib axis object
 
-    def __decstat__(self, ax, dStats):
+        '''
+        args = (self.X, self.hist, var, methods, ax, colors, tight_layout)
+        ax = plotting_matchdist_base(*args)
+        return ax
 
-        '''Descriptive Statistics'''
-        GetVals = lambda t:__numfmt__(getattr(dStats,t))
-        text0 = [("Unique", "unique"), ("Missing", "missing"),
-                 ("Mean", "mean"), ("Stdev", "std"), 
-                 ("Skewness", "f_skewness"), ("Kurtosis", "kurtosis"), 
-                 ("Min", "min"), ("25%", "pct25"), ("50%", "pct50"), 
-                 ("75%", "pct75"), ("Max", "max")]
-        
-        s  = ['Count = ' + __numfmt__(self.X.shape[0])]
-        s += ['{} = {}'.format(t0, GetVals(t1)) for t0,t1 in text0]
-        s += ['{} = {} ({})'.format(t0, GetVals(t1), GetVals(t2)) 
-              for t0,t1,t2 in [("Lower","lower","n_lower"),
-                               ("Upper","upper","n_upper")]]
-        
-        ax.text(1.03, 1, '\n'.join(tuple(s)), transform=ax.transAxes, 
-                fontsize=12, va='top', ha='left')
-
-    def __rescale__(self, x0:np.ndarray, 
-                    x1:np.ndarray, x=None) -> np.ndarray:
-    
-        '''Rescale x0 to x1'''
-        x = x0 if x is None else x
-        norm = (x-min(x0))/(max(x0)-min(x0))
-        try: return norm*(max(x1)-min(x1))+min(x1)
-        except: return np.full(len(a), np.nan)
-        
-def __numfmt__(n:Union[int, float], 
-               w:int=15, d:int=4) -> str:
-    
-    '''Apply number format'''
-    if (isinstance(n, int) & (abs(n)<1e6)) | (n==0): 
-        return "{:,.0f}".format(n)
-    elif (isinstance(n, float) & (abs(n)<1e6)):
-        return "{:,.4f}".format(n)
-    else: return "{:,.4E}".format(n)
-    
-class Descriptive(UnivariateOutliers, DescStatsPlot):
+def plotting_matchdist_base(X, hist, var=None, methods=None, ax=None, 
+                            colors=None, tight_layout=True):
     
     '''
-    Generate descriptive statistics, which include those 
-    that summarize the central tendency, dispersion and 
-    shape of a dataset’s distribution, excluding NaN.
+    Function to plot PDF.
+
+    Parameters
+    ----------
+    X : array-like or pd.DataFrame
+        Sample data.
+            
+    hist : dict
+        The key is variable name and value is <namedtuple>, "density", 
+        whose fields are "hist", "chi2", "ks", and "qq". In each field, 
+        there are also sub-fields, which are "x", "y", and "label".
+
+    var : str, default=None
+        Variable name in `hist`. If None, the first key is selected.
+        
+    methods : list of str, default=None 
+        List of statistical methods i.e. "chi2", "ks", and "qq". If
+        None, all are selected.
+        
+    ax : Matplotlib axis object, default=None
+        Predefined Matplotlib axis. If None, `ax` is created with 
+        default figsize.
+
+    colors : list of color-hex, default=None
+        Number of color-hex must be greater than or equal to 3. If 
+        None, it uses default colors from Matplotlib.
+
+    tight_layout : bool, default=True
+        If True, it adjusts the padding between and around subplots 
+        i.e. plt.tight_layout().
+        
+    Returns
+    -------
+    ax : Matplotlib axis object
+    
+    '''
+    
+    # =============================================================
+    # Default ax and colors.
+    if ax is None: ax = plt.subplots(figsize=(6.5, 4))[1] 
+    colors = ([ax._get_lines.get_next_color() for n in range(3)]
+              if colors is None else colors)
+    # -------------------------------------------------------------
+    var_list = list(hist.keys())
+    if var is None: var = var_list[0]
+    if methods is None: methods = ["chi2", "ks", "qq"]
+    # ------------------------------------------------------------- 
+    kwds = {'chi2' : dict(lw=2, c=colors[0], ls=(0,(5, 1))),
+            'ks'   : dict(lw=2, c=colors[1], ls=(0,(1, 1))),
+            'qq'   : dict(lw=2, c=colors[2], ls="-")}
+    # -------------------------------------------------------------
+    zorder = len(methods)
+    for fld in hist[var]._fields:
+        r, zorder = getattr(hist[var], fld), zorder - 1
+        if fld=='hist':
+            x = X.loc[X[var].notna(),var].values
+            ax.hist(x, bins=r.x, **dict(facecolor="#f1f2f6", 
+                                        edgecolor="grey", lw=0.8, 
+                                        zorder=-1, label=var))
+    # -------------------------------------------------------------
+        elif fld in methods: 
+            kwargs = {**{'label': r.label}, **kwds[fld]}
+            cubic = interp1d(r.x, r.y, kind = "cubic")
+            new_x = np.linspace(r.x.min(), r.x.max(), 500)
+            ax.plot(new_x, cubic(new_x), **kwargs)
+    # =============================================================
+    
+    # Set other attributes.
+    # =============================================================
+    ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(8))
+    ax.tick_params(axis='both', labelsize=11)
+    # -------------------------------------------------------------
+    args = (ax.transAxes, ax.transAxes)
+    transform = transforms.blended_transform_factory(*args)
+    ax.text(1.01, 0, "x", fontsize=13, va='center', ha="left", 
+            transform=transform)
+    # -------------------------------------------------------------
+    for spine in ["top", "left", "right"]:
+        ax.spines[spine].set_visible(False)
+    ax.yaxis.set_visible(False)
+    ax.patch.set_alpha(0)
+    # -------------------------------------------------------------
+    ax.legend(edgecolor="grey" , borderaxespad=0.5, markerscale=1, 
+              columnspacing=0.3, handletextpad=0.5, loc="best", 
+              prop=dict(size=12)) 
+    if tight_layout: plt.tight_layout()
+    # =============================================================
+    
+    return ax
+
+class Compare2samp:
+    
+    '''
+    Compare two sets of sample by using Chi-Square test for 
+    homogeneity [1,2], Kolmogorov-Smirnov [3,4] tests, and Population 
+    Stability Index (PSI) [5].
+    
+    The methods used are the followings:
+    
+    (1) Using Chi-Square to test Goodness-of-Fit-Test (χ)
+        The goodness of fit test is used to test if sample data fits 
+        a distribution from a certain population. Its formula is 
+        expressed as:
+        
+                  χ = ∑{(O(i)-E(i))^2/E(i)}, i ∈ 1,2,…,n
+                
+        where O(i) and E(i) are observed and expected percentages of 
+        ith bin, and n is a number of bins
+   
+    (2) The two-sample Kolmogorov-Smirnov test
+        It is a general nonparametric method for comparing two 
+        distributions by determining the maximum distance from the 
+        cumulative distributions, whose function (`s`) can be 
+        expressed as: 
+    
+                          s(x,m) = f(m,x)/n(m)
+    
+        where f(m,x) is a cumulative frequency of distribution m given 
+        x and n(m) is a number of samples of m. The Kolmogorov–Smirnov 
+        statistic for two given cumulative distribution function, a 
+        and b is:
+    
+                       D(a,b) = max|s(x,a) - s(x,b)|
+                
+        where a ∪ b = {x: x ∈ a or x ∈ b}. The null hypothesis or H0 
+        says that both independent samples have the same distribution.
+    
+    (3) Population Stability Index (PSI)
+    
+    =================================================================
+    |  PSI Value  |      Inference         |        Action          |
+    -----------------------------------------------------------------
+    |    < 0.10   | no significant change  | no action required     |
+    |  0.1 – 0.25 | small change           | investigation required |       
+    |    > 0.25   | Major shift            | need to delve deeper   |
+    =================================================================
+            
+            PSI = ∑{(%A(i)-%E(i))*LOG(%A(i)/%E(i))}, i ∈ 1,2,…,n
+        
+        In addition, %A(i) and %E(i) can be expressed as:
+        
+                      %A(i) = A(i)/A, %E(i) = E(i)/E
+          
+        where "A(i)" and "E(i)" are actual and expected amount of 
+        ith bin, and "n" is a number of bins.
+
+    Parameters
+    ----------
+    bins : dict, default=None
+        Key must be column name and its value must be a monotonically 
+        increasing array of bin edges, including the rightmost edge.
+        This is only applicable when data type is numeric.
+        
+    global_bins : int, defualt=10
+        Number of Chi-Square bins to start off with. This is relevant
+        to feature, whose `bins` is not provided.
+
+    equal_width : bool, default=True
+        If True, it uses equal-width binning, otherwise equal-sample 
+        binning is used instead.
+        
+    max_category : int, default=100
+        If number of unique elements from column with "object" dtype, 
+        is less than or equal to max_category, its dtype will be 
+        converted to "category". max_category must be greater than or 
+        equal to 2.
+    
+    frac : float, default=0.01
+        It defines a minimum fraction (%) of expected samples per bin. 
+        A minimum number of samples resulted from `frac` is 5.
+    
+    References
+    ----------
+    .. [1] https://en.wikipedia.org/wiki/Goodness_of_fit
+    .. [2] https://courses.lumenlearning.com/wmopen-concepts-
+           statistics/chapter/test-of-homogeneity/
+    .. [3] https://en.wikipedia.org/wiki/Kolmogorov–Smirnov_test
+    .. [4] https://docs.scipy.org/doc/scipy/reference/generated/scipy.
+           stats.ks_2samp.html
+    .. [5] http://www.stat.wmich.edu/naranjo/PSI.pdf
+           
+    Attributes
+    ----------
+    result : collections.OrderedDict
+        The order of keys is arranged according to input variable. 
+        Within each key, it contains "Stats" (collections.namedtuple) 
+        with following fields:
+        
+        - "variable"    : Variable name
+        - "chi2_chisq"  : Chi-Square test statistic
+        - "chi2_df"     : Chi-Square degrees of freedom
+        - "chi2_pvalue" : Chi-Square test p-value
+        - "chi2_bins"   : Chi-Square bin edges
+        - "ks_stat"     : Kolmogorov-Smirnov test statistic 
+        - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
+        - "psi"         : Population Stability Index
+        - "dtype"       : Data type
+
+    info : pd.DataFrame
+        Information table is comprised of:
+        
+        - "variable"    : Variable name
+        - "chi2_chisq"  : Chi-Square test statistic
+        - "chi2_df"     : Chi-Square degrees of freedom
+        - "chi2_pvalue" : Chi-Square test p-value
+        - "chi2_bins"   : Number of Chi-Square bins
+        - "ks_stat"     : Kolmogorov-Smirnov test statistic
+        - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
+        - "psi"         : Population Stability Index
+        - "dtype"       : Data type
+    
+    Examples
+    --------
+    >>> from sklearn.datasets import fetch_openml
+    >>> X, y = fetch_openml("titanic", version=1, as_frame=True, 
+    ...                     return_X_y=True)
+    
+    Take a random sample of items from an axis of object.
+    >>> random_X = X.sample(100).copy()
+    
+    Fit model
+    >>> model = Compare2samp(bins=10, equal_width=True, 
+    ...                      max_category=100).fit(X, random_X)
+    
+    Result
+    >>> model.result
+    
+    Summary result
+    >>> model.info
+    
+    '''
+    def __init__(self, bins=None, global_bins=10, equal_width=True, 
+                 max_category=100, frac=0.01):
+        
+        self.bins = bins if bins is not None else dict()
+        self.global_bins = global_bins
+        self.equal_width = equal_width
+        self.max_category = max_category
+        self.frac = min(np.fmax(frac, np.finfo("float32").eps), 0.9)
+    
+    def fit(self, X1, X2, use_X1=True):
+        
+        '''
+        Fit model.
+        
+        Parameters
+        ----------
+        X1, X2 : array-like or pd.DataFrame
+            Two DataFrames of sample observations, where their sample 
+            sizes can be different but they must have the same number of 
+            features (columns).
+            
+        use_X1 : bool, default=True
+            If True, it uses X1, and X2 as expected and observed samples, 
+            respectively, and vice versa when use_X1 is False.
+    
+        Attributes
+        ----------
+        result : collections.OrderedDict
+            The order of keys is arranged according to input variable. 
+            Within each key, it contains "Stats" (collections.namedtuple) 
+            with following fields:
+            
+            - "variable"    : Variable name
+            - "chi2_chisq"  : Chi-Square test statistic
+            - "chi2_df"     : Chi-Square degrees of freedom
+            - "chi2_pvalue" : Chi-Square test p-value
+            - "chi2_bins"   : Chi-Square bin edges
+            - "ks_stat"     : Kolmogorov-Smirnov test statistic 
+            - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
+            - "psi"         : Population Stability Index
+            - "dtype"       : Data type
+
+        info : pd.DataFrame
+            Information table is comprised of:
+            
+            - "variable"    : Variable name
+            - "chi2_chisq"  : Chi-Square test statistic
+            - "chi2_df"     : Chi-Square degrees of freedom
+            - "chi2_pvalue" : Chi-Square test p-value
+            - "chi2_bins"   : Number of Chi-Square bins
+            - "ks_stat"     : Kolmogorov-Smirnov test statistic
+            - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
+            - "psi"         : Population Stability Index
+            - "dtype"       : Data type
+        
+        '''
+        
+        # =============================================================
+        # Convert `X` to pd.DataFrame
+        X1 = _to_DataFrame(X1).copy()
+        X2 = _to_DataFrame(X2).copy()
+        # -------------------------------------------------------------
+        # Assign to expected and observed samples
+        x_exp, x_obs = (X1, X2) if use_X1 else (X2, X1)
+        x_exp = column_dtype(x_exp, self.max_category)
+        x_obs = column_dtype(x_obs, self.max_category)
+        self.n_ = [x_exp.shape[0], x_obs.shape[0]]
+        n_min = max(int(self.frac * x_exp.shape[0]), 5)
+        # -------------------------------------------------------------
+        # Numeric and catigorical features from expected observation
+        cat_features = list(x_exp.select_dtypes(include="category"))
+        num_features = list(x_exp.select_dtypes(include=np.number))
+        # -------------------------------------------------------------
+        # Initialize parameters.
+        self.fields = ["chi2_chisq", "chi2_df", "chi2_pvalue", 
+                       "chi2_bins", "ks_stat", "ks_pvalue", "psi", 
+                       "dtype"]
+        Stats = collections.namedtuple('Stats', self.fields)   
+        self.result = collections.OrderedDict()
+        # =============================================================
+
+        # Numerical Features
+        # =============================================================
+        fields = ["f_exp", "f_obs", "type"]
+        Params = collections.namedtuple('Params', fields)
+        self.hist_data = collections.OrderedDict()
+        # -------------------------------------------------------------
+        for feat in num_features:
+            data1 = x_exp[feat].values.copy()
+            data2 = x_obs[feat].values.copy()
+        # -------------------------------------------------------------
+            # Calculate bin edges, given binning method.
+            chi2_bins = self.bins.get(feat, None)
+            if chi2_bins is None:
+                args = (data1, self.global_bins, self.equal_width)
+                chi2_bins = self.__bins__(*args)
+            chi2_bins = self.__leqx__(data1, chi2_bins, n_min)
+        # -------------------------------------------------------------
+            # Frequency of expected and observed samples
+            f_exp = self.__freq__(data1, chi2_bins)
+            f_obs = self.__freq__(data2, chi2_bins)
+            f_exp = np.where(f_exp==0, np.finfo(float).eps, f_exp)
+        # -------------------------------------------------------------
+            # Chi-Square test for goodness of fit.
+            chi2_chisq = ((f_obs-f_exp)**2/f_exp).sum()*100
+            chi2_df = max(len(chi2_bins)-2,1)
+            chi2_pvalue = 1-stats.chi2.cdf(chi2_chisq, df=chi2_df)
+        # -------------------------------------------------------------
+            # Kolmogorov-Smirnov test for goodness of fit.
+            kwd = dict(alternative='two-sided', mode='auto')
+            ks_stat, ks_pvalue = stats.ks_2samp(data1, data2, **kwd)
+        # -------------------------------------------------------------   
+            # Population Stability Index
+            f_obs = np.where(f_obs==0, np.finfo(float).eps, f_obs)
+            psi = (f_obs - f_exp) * np.log(f_obs / f_exp)
+            psi = np.nan_to_num(psi, nan=0.).sum()
+        # -------------------------------------------------------------   
+            self.hist_data[feat] = Params(*(f_exp, f_obs, "number"))
+            self.result[feat] = Stats(*(chi2_chisq, chi2_df, chi2_pvalue, 
+                                        chi2_bins, ks_stat, ks_pvalue, 
+                                        psi, data1.dtype))
+        # =============================================================
+            
+        # Categorical Features
+        # =============================================================
+        # Keyword argument for OrdinalEncoder
+        kwds = dict(categories='auto', dtype=np.int32, unknown_value=-1,
+                    handle_unknown="use_encoded_value")
+        # -------------------------------------------------------------
+        # Fit and transform data.
+        encoder = OrdinalEncoder(**kwds).fit(x_exp[cat_features])
+        cat_exp = encoder.transform(x_exp[cat_features])
+        cat_obs = encoder.transform(x_obs[cat_features])
+        # -------------------------------------------------------------
+        for n,feat in enumerate(cat_features):
+            data1 = cat_exp[:,n].copy()
+            data2 = cat_obs[:,n].copy()
+        # -------------------------------------------------------------    
+            # Calculate bin edges, given binning method.
+            args = (data1, max(data1) + 1, self.equal_width)
+            chi2_bins = self.__bins__(*args)
+            chi2_bins = self.__leqx__(data1, chi2_bins, n_min)
+        # -------------------------------------------------------------    
+            # Frequency of expected and observed samples
+            f_exp = self.__freq__(data1, chi2_bins, len(chi2_bins))
+            f_obs = self.__freq__(data2, chi2_bins, len(chi2_bins))
+            f_exp = np.where(f_exp==0, np.finfo(float).eps, f_exp)
+        # -------------------------------------------------------------   
+            # Chi-Square test for goodness of fit.
+            chi2_chisq = ((f_obs-f_exp)**2/f_exp).sum()*100
+            chi2_df = max(len(chi2_bins)-2,1)
+            chi2_pvalue = 1-stats.chi2.cdf(chi2_chisq, df=chi2_df)
+        # -------------------------------------------------------------    
+            # Change chi2_bins format 
+            # i.e. (Group(x), [element(x,1), .., element(x,n)])
+            index = np.digitize(np.arange(0, max(data1)+1), chi2_bins)
+            chi2_bins = [(i,list(encoder.categories_[n][index==i])) 
+                         for i in np.unique(index)]
+        # -------------------------------------------------------------   
+            # Population Stability Index
+            f_obs = np.where(f_obs==0, np.finfo(float).eps, f_obs)
+            psi = (f_obs - f_exp) * np.log(f_obs / f_exp)
+            psi = np.nan_to_num(psi, nan=0.).sum()
+        # -------------------------------------------------------------    
+            self.hist_data[feat] = Params(*(f_exp, f_obs, "category"))
+            self.result[feat] = Stats(*(chi2_chisq, chi2_df, chi2_pvalue, 
+                                        chi2_bins, np.nan, np.nan, psi,
+                                        "category"))
+        # =============================================================
+        
+        self.__info__()
+        return self
+    
+    def __info__(self):
+        
+        '''self.info : pd.DataFrame'''
+        data = []
+        attr = lambda k,f : getattr(self.result[k],f)
+        for key in self.result.keys():
+            stats = [attr(key,fld) if fld!='chi2_bins' 
+                     else 0 for fld in self.fields]
+            data.append([key] + stats)
+        info = pd.DataFrame(data, columns=["variable"] + self.fields)
+        info['chi2_bins'] = info['chi2_df'] + 1
+        self.info = info.set_index("variable")
+      
+    def __freq__(self, x, bins, max_index=None):
+        
+        '''
+        Determine frequency (include np.nan). This function uses 
+        np.digitize() to determine the indices of the bins to which each 
+        value in input array belongs. If any values in x are less than 
+        the minimum bin edge bins[0], they are indexed for bin 1. Whereas 
+        any values that are greater than the maximum bin edge bin[-1] or 
+        are np.nan, they are indexed for bin "len(bins)+1" or "max_index".
+        
+        '''
+        if max_index is None: max_index = len(bins) + 1
+        indices = np.clip(np.digitize(x, bins), 1, max_index)
+        return np.array([sum(indices==n) for n in range(1, max_index)])/len(x)
+        
+    def __bins__(self, x, bins, equal_width=True):
+        
+        '''
+        According to binning method (equal-width or equal-sample),this 
+        function generates 1-dimensional and monotonic array of bins. The 
+        last bin edge is the maximum value in x plus np.finfo("float32").
+        eps.
+        
+        '''
+        bins = np.fmax(bins, 2) + 1
+        if equal_width: 
+            args = (np.nanmin(x), np.nanmax(x), bins)
+            bins = np.linspace(*args)
+        elif equal_width==False:
+            q = np.linspace(0, 100, bins)
+            bins = np.unique(np.nanpercentile(x, q))
+        bins[-1] = bins[-1] + np.finfo("float32").eps
+        return bins
+        
+    def __leqx__(self, x, bins, n_min=5):
+    
+        '''
+        To ensure that the sample size is appropriate for the use of the 
+        test statistic, we need to ensure that frequency in each bin must
+        be greater than "n_min". Bin is collasped to its immediate left 
+        bin if above condition is not met, except the first bin.
+        
+        '''
+        notnan = x[~np.isnan(x)]
+        if len(bins)>2:
+            while True:
+                leq5  = (np.histogram(notnan, bins)[0] < n_min)
+                index = np.fmax(np.argmax(leq5),1)
+                if sum(leq5)==0: return bins
+                else: bins = np.delete(bins, index)
+                if len(bins)<3: return bins
+        else: return bins
+
+    def plotting(self, var, ax=None, colors=None, tight_layout=True, 
+                 decimal=0, expect_kwds=None, observe_kwds=None, 
+                 xticklabel_format=None, max_display=2):
+        
+        '''
+        Plot Chi-Square Goodness of Fit Test.
+
+        Parameters
+        ----------
+        var : str
+            Variable name in self.info (attribute).
+
+        ax : Matplotlib axis object, default=None
+            Predefined Matplotlib axis. If None, `ax` is created with 
+            default figsize.
+
+        colors : list of color-hex, default=None
+            Number of color-hex must be greater than 1. If None, it uses 
+            default colors from Matplotlib.
+
+        tight_layout : bool, default=True
+            If True, it adjusts the padding between and around subplots 
+            i.e. plt.tight_layout().
+
+        decimal : int, default=0
+            Decimal places for annotation of value(s).
+
+        expect_kwds : keywords, default=None
+            Keyword arguments of expected samples to be passed to "ax.bar".
+
+        observe_kwds : keywords, default=None
+            Keyword arguments of observed samples to be passed to "ax.bar".
+
+        xticklabel_format : string formatter, default=None
+            String formatters (function) for ax.xticklabels values. If None, 
+            it defaults to "{:,.xf}".format, where x is a decimal place
+            determined automatically by algorithm. If x exceeds 5, it
+            defaults to "{:,.1e}".format.
+
+        max_display : int, default=1
+            Maximum number of categories to be displayed. This is available 
+            only when dtype=="category".
+
+        Returns
+        -------
+        ax : Matplotlib axis object
+
+        '''
+        args = (var, ax, colors, tight_layout, decimal, expect_kwds, 
+                observe_kwds, xticklabel_format, max_display)
+        ax = plotting_2samp_base(self, *args)
+        return ax
+
+def column_dtype(X, max_category=100):
+    
+    '''
+    This function converts columns to best possible dtypes which are 
+    "float32", "int32" (boolean), "category", and "object". However, 
+    it ignores columns, whose dtype is either np.datetime64 or 
+    np.timedelta64.
+    
+    Parameters
+    ----------
+    X : pd.DataFrame
+        Input array.
+    
+    max_category : int, default=100
+        If number of unique elements from column with "object" dtype, 
+        is less than or equal to max_category, its dtype will be 
+        converted to "category". max_category must be greater than or 
+        equal to 2.
+    
+    Returns
+    -------
+    Converted_X : pd.DataFrame
+    
+    '''
+    # Select columns, whose dtype is neither datetimes, nor timedeltas.
+    exclude = [np.datetime64, np.timedelta64] 
+    columns = list(X.select_dtypes(exclude=exclude))
+    
+    if isinstance(max_category, int): max_category = max(2, max_category)
+    else: max_category = 100
+    
+    # Replace pd.isnull() with np.nan
+    Converted_X = X.copy()
+    Converted_X.iloc[:,:] = np.where(X.isnull(), np.nan, X)
+    
+    for var in columns:
+        x = Converted_X[var].copy()
+        try:
+            float32 = x.astype("float32")
+            if np.isnan(float32).sum()==0:
+                int32 = x.astype("int32")
+                if (int32-float32).sum()==0: Converted_X[var] = int32
+                else: Converted_X[var] = float32
+            else: Converted_X[var] = float32 
+        except:
+            objtype = x.astype("object")
+            n_unq = len(objtype.unique())
+            if n_unq<=max_category:
+                Converted_X[var] = x.astype(str).astype("category") 
+            else: Converted_X[var] = objtype
+    return Converted_X
+
+def plotting_2samp_base(compare, var, ax=None, colors=None, tight_layout=True, 
+                        decimal=0, expect_kwds=None, observe_kwds=None, 
+                        xticklabel_format=None, max_display=2):
+        
+    '''
+    Plot Chi-Square Goodness of Fit Test.
+
+    Parameters
+    ----------
+    compare : class object
+        Fitted `Compare2samp` object.
+    
+    var : str
+        Variable name in self.info (attribute).
+
+    ax : Matplotlib axis object, default=None
+        Predefined Matplotlib axis. If None, `ax` is created with 
+        default figsize.
+
+    colors : list of color-hex, default=None
+        Number of color-hex must be greater than 1. If None, it uses 
+        default colors from Matplotlib.
+
+    tight_layout : bool, default=True
+        If True, it adjusts the padding between and around subplots 
+        i.e. plt.tight_layout().
+
+    decimal : int, default=0
+        Decimal places for annotation of value(s).
+
+    expect_kwds : keywords, default=None
+        Keyword arguments of expected samples to be passed to "ax.bar".
+
+    observe_kwds : keywords, default=None
+        Keyword arguments of observed samples to be passed to "ax.bar".
+
+    xticklabel_format : string formatter, default=None
+        String formatters (function) for ax.xticklabels values. If None, 
+        it defaults to "{:,.xf}".format, where x is a decimal place
+        determined automatically by algorithm. If x exceeds 5, it
+        defaults to "{:,.1e}".format.
+
+    max_display : int, default=1
+        Maximum number of categories to be displayed. This is available 
+        only when dtype=="category".
+
+    Returns
+    -------
+    ax : Matplotlib axis object
+
+    '''
+    
+    # ===============================================================
+    # Get values from self.hist_data
+    var_list = list(compare.hist_data.keys())
+    if var not in var_list:
+        raise ValueError(f"var must be in {var_list}. "
+                         f"Got {var} instead.")
+    f_exp = compare.hist_data[var].f_exp
+    f_obs = compare.hist_data[var].f_obs
+    dtype = compare.hist_data[var].type
+    data  = compare.result[var]
+    bins  = data.chi2_bins
+    x = np.arange(len(f_exp))
+    # ---------------------------------------------------------------
+    # Create matplotlib.axes if ax is None.
+    width  = max(6.5, len(f_exp) * 0.9)
+    if ax is None: ax = plt.subplots(figsize=(width, 4.5))[1] 
+    colors = ([ax._get_lines.get_next_color() for n in range(2)] 
+              if colors is None else colors)
+    # ===============================================================
+
+    # Bar plots
+    # ===============================================================
+    num_format = ("{:,." + str(decimal) + "%}").format
+    anno_kwds = dict(xytext =(0,4), textcoords='offset points', 
+                     va='bottom', ha='center', fontsize=13, 
+                     fontweight='demibold')
+    # ---------------------------------------------------------------
+    # Vertical bar (Expect).
+    kwds = dict(width=0.4, alpha=0.9, color=colors[0], 
+                label='Expect ({:,d})'.format(compare.n_[0]))
+    ax.bar(x-0.25, f_exp, **({**kwds, **expect_kwds} if 
+                             expect_kwds is not None else kwds))
+    # ---------------------------------------------------------------
+    # Annotation (Expect).
+    kwds = {**anno_kwds, **dict(color=colors[0])}
+    for xy in zip(x-0.25, f_exp): 
+        ax.annotate(num_format(min(xy[1],1)), xy, **kwds)
+    # ---------------------------------------------------------------
+    # Vertical bar (Observe).   
+    kwds = dict(width=0.4, alpha=0.9, color=colors[1], 
+                label='Observe ({:,d})'.format(compare.n_[1]))    
+    ax.bar(x+0.25, f_obs, **({**kwds, **observe_kwds} if 
+                             observe_kwds is not None else kwds))
+    # ---------------------------------------------------------------
+    # Annotation (Observe).
+    kwds = {**anno_kwds, **dict(color=colors[1])}
+    for xy in zip(x+0.25, f_obs): 
+        ax.annotate(num_format(min(xy[1],1)), xy, **kwds)
+    # ===============================================================
+
+    # Set other attributes         
+    # ===============================================================
+    title  = f"Variable : {var}\n" 
+    pvalue = lambda v : "N/A" if np.isnan(v) else "{:,.0%}".format(v)
+    args   = (pvalue(data.chi2_pvalue), pvalue(data.ks_pvalue)) 
+    title += r"p-value ($\chi^{2}$, KS) : " + "({}, {})".format(*args)
+    title += "\nPSI : {:.4f}".format(data.psi)
+    props = dict(boxstyle='square', facecolor='none', alpha=0)
+    ax.text(0, 0.97, title, transform=ax.transAxes, fontsize=13,
+            va='top', ha="left", bbox=props)
+    # ---------------------------------------------------------------
+    # x-ticklabels number format
+    if (xticklabel_format is None) & (dtype=="number"): 
+        pts = 0
+        while True:
+            adj = np.unique(np.round(bins, pts))
+            if len(adj)<len(bins): pts += 1
+            else: break
+        if pts > 5: n_format = "{:,.1e}".format
+        n_format = ("{:,." + str(pts) + "f}").format
+    else: n_format = xticklabel_format
+    # ---------------------------------------------------------------   
+    xticklabels = []
+    if dtype=="number":
+        for n in np.arange(len(f_exp)):
+            if n < len(f_exp)-1: 
+                r = r"$<$"+ f"{n_format(bins[n+1])}"
+            else: r = (r"$\geq$" + f"{n_format(bins[-1])}" 
+                       + "\nor missing")
+            xticklabels.append(f"Group {n+1}" + "\n" + r)
+    # ---------------------------------------------------------------
+    elif dtype=="category":
+        for n, m in bins:
+            if max_display>0:
+                # format = {A, B,...(n)}
+                n_set = [f'"{s}"' for s in np.array(m)[:max_display]]
+                if len(m)>max_display: 
+                    n_set += [" ..({:,d})".format(len(m))]
+                xticklabels += [f"Group {n}" + "\n{" + 
+                                ",".join(n_set) + "}"]
+            else: xticklabels += [f"Group {n}" + 
+                                  "\n({:,.0f})".format(len(m))]
+    # ---------------------------------------------------------------            
+    xticklabels += [label.split('\n')[0] for label in xticklabels]
+    xtick_pos = (list(x) + list(x+1e-8))
+    plt.xticks(xtick_pos, xticklabels, fontsize=12)
+    # ---------------------------------------------------------------
+    # color the y tick labels that have the feature values as gray
+    # (these fall behind the black ones with just the feature name)
+    tick_labels = ax.xaxis.get_majorticklabels()
+    for i in x: tick_labels[i].set_color("#999999")
+    ax.set_xlim(-0.5, len(f_exp)-0.5)
+    # ---------------------------------------------------------------
+    for spine in ["top", "left", "right"]:
+        ax.spines[spine].set_visible(False)
+    ax.yaxis.set_visible(False)
+    ax.patch.set_alpha(0)
+    y_min, y_max = ax.get_ylim()
+    ax.set_ylim(y_min, y_max/0.7)
+    # ---------------------------------------------------------------
+    ax.legend(edgecolor="grey", facecolor="none", borderaxespad=0.5, 
+              markerscale=1, columnspacing=0.3,handletextpad=0.5, 
+              loc="upper right", prop=dict(size=12)) 
+    if tight_layout: plt.tight_layout()
+    # ===============================================================
+    
+    return ax
+
+def descriptive_plot(X, var, bins="fd", ax=None, whis=3.0, 
+                     tight_layout=True, hist_kwds=None, plot_kwds=None, 
+                     show_title=True, show_stats=True, stats_format=None):
+    
+    '''
+    Plot descriptive statistics.
+    
+    Parameters
+    ----------
+    X : pd.DataFrame
+        Input pd.DataFrame object.
+        
+    var : str, default=None
+        Variable name in X.
+            
+    bins : int or sequence of scalars or str, default=None
+        `bins` defines the method used to calculate the optimal bin 
+        width, as defined by <numpy.histogram>. If None, it defaults 
+        to "fd".
+        
+    ax : Matplotlib axis object, default=None
+        Predefined Matplotlib axis. If None, `ax` is created with 
+        default figsize.
+   
+    whis : float, default=3.0
+        It determines the reach of the whiskers to the beyond the 
+        first and third quartiles, which are Q1 - whis*IQR, and Q3 + 
+        whis*IQR, respectively. This applies to both coordinates and 
+        lower and upper bounds accordingly. If None, no bounds are
+        determined.
+
+    tight_layout : bool, default=True
+        If True, it adjusts the padding between and around subplots 
+        i.e. plt.tight_layout().
+
+    hist_kwds : keywords, default=None
+        Keyword arguments to be passed to "ax.hist".
+
+    plot_kwds : keywords, default=None
+        Keyword arguments to be passed to "ax.plot".
+        
+    show_title : bool, default=True
+        If True, it shows plot title.
+        
+    show_stats : bool, default=True
+        If True, it shows descriptive statistics of `var`.
+        
+    stats_format : string formatter, default=None
+        String formatters (function) for statistical values. If None, 
+        it defaults to "{:,.3g}".format. This does not include 
+        "Skewness", and "Kurtosis".
+        
+    Returns
+    -------
+    ax : Matplotlib axis object
+
+    '''
+
+    # ===============================================================
+    if var not in list(X):
+        raise ValueError(f"var must be in {list(X)}. "
+                         f"Got {var} instead.")
+    x = X.loc[X[var].notna(), var].values.copy()
+    # Create matplotlib.axes if ax is None.
+    if ax is None: ax = plt.subplots(figsize=(6.5, 4))[1] 
+    # ---------------------------------------------------------------
+    kwds = dict(facecolor="#f1f2f6", edgecolor="grey", linewidth=0.8)
+    if hist_kwds is None: hist_kwds = kwds
+    else: hist_kwds = {**kwds, **hist_kwds}
+    n,_,_ = ax.hist(x, bins, **{**hist_kwds,
+                                **{"label":"Undefined"}})
+    # ---------------------------------------------------------------
+    bandwidth = np.diff(np.histogram(x, bins=bins)[1])[1]
+    z, pdf = __kde__(x, {"bandwidth": bandwidth})
+    kwds = dict(color="#3742fa", linewidth=2, linestyle="--")
+    if plot_kwds is None: plot_kwds = kwds
+    else: plot_kwds = {**kwds, **plot_kwds}    
+    scale = max(n) / max(pdf)   
+    ax.plot(z, pdf*scale, **{**plot_kwds, **{"label":"PDF"}})
+    # ===============================================================
+
+    # Set other attributes         
+    # ===============================================================
+    if show_title:
+        s = (f"Variable : {var}\n" + 'N = {:,d}, '.format(len(x)) + 
+             "Missing = {:.1%}".format(1 - len(x)/len(X)))
+        props = dict(boxstyle='square', facecolor='none', alpha=0)
+        ax.text(0, 1.01, s, transform=ax.transAxes, fontsize=13,
+                va='bottom', ha="left", bbox=props)
+    # ---------------------------------------------------------------
+    # Percentile, and Galton skewness
+    if stats_format is None: stats_format = "{:,.3g}".format
+    mean  = f"Mean = {stats_format(np.mean(x))}"
+    stdev = f"Stdev = {stats_format(np.std(x))}"
+    skewness = "Skewness = {:,.2f}".format(stats.skew(x))
+    kurtosis = "Kurtosis = {:,.2f}".format(stats.kurtosis(x))
+    Q = np.percentile(x, np.linspace(0, 100, 5))
+    q = zip(["Min", "25%", "50%", "75%", "Max"], Q)
+    pct = "\n".join([s + " = " + stats_format(v) for s,v in q])
+    s = ("\n".join((mean, stdev)) + "\n" + pct + "\n" + 
+         "\n".join((skewness, kurtosis)))
+    # ---------------------------------------------------------------
+    if show_stats:
+        bbox = dict(boxstyle='round', facecolor='white', 
+                    edgecolor="black", pad=0.4, linewidth=0.5)
+        kwds = dict(s=s, transform=ax.transAxes, fontsize=13, 
+                    va='top', ha='left', bbox=bbox)
+        text = ax.text(0.01, 0.95, **kwds)
+    # ---------------------------------------------------------------
+        x_min, x_max = ax.get_xlim()
+        width  = (x_max - x_min)
+        render = plt.gcf().canvas.get_renderer()
+        ax_box = ax.get_window_extent(renderer=render) 
+        tx_box = text.get_window_extent(renderer=render)
+        offset = (ax_box.width - tx_box.width) / ax_box.width
+    # ---------------------------------------------------------------   
+        patches = [ax.get_children()[0]] * 7
+        legend  = ax.legend(patches, ["x" * 12] * 10, loc='best', 
+                            prop={'size':13})
+        x0  = legend.get_window_extent(renderer=render).x0
+        ax.legend().remove()
+        mid_pt  = ax_box.width/2 + ax_box.x0
+        if mid_pt <= x0: 
+            text.remove()
+            ax.text(offset+0.01, 0.95, **kwds)
+    # ---------------------------------------------------------------  
+    if whis is not None:
+        iqr = (Q[3] - Q[1]) * whis
+        ax.set_xlim(np.fmax(Q[1] - iqr, min(x)), 
+                    np.fmin(Q[3] + iqr, max(x))) 
+    # ---------------------------------------------------------------
+    for spine in ["top", "left", "right"]:
+        ax.spines[spine].set_visible(False)
+    ax.yaxis.set_visible(False)
+    ax.patch.set_alpha(0)
+    y_min, y_max = ax.get_ylim()
+    ax.set_ylim(y_min, y_max/0.85)
+    ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(6))
+    ax.tick_params(axis='both', labelsize=11)
+    # ---------------------------------------------------------------
+    args = (ax.transAxes, ax.transAxes)
+    transform = transforms.blended_transform_factory(*args)
+    ax.text(1.01, 0, "x", fontsize=13, va='center', ha="left", 
+            transform=transform)
+    if tight_layout: plt.tight_layout()
+    # ===============================================================
+
+    return ax
+
+def __kde__(x, kernel_kwds=None):
+
+    '''Private function: Kernel Density Estimator'''
+    default_kwds = {"bandwidth": 0.2, "kernel": 'gaussian'}
+    if kernel_kwds is not None: default_kwds.update(kernel_kwds)
+    kde = KernelDensity(**default_kwds).fit(x.reshape(-1,1))
+
+    # score_samples returns the log of the probability density
+    z   = np.linspace(min(x), max(x), 101)
+    pdf = np.exp(kde.score_samples(z.reshape(-1,1)))
+    pdf = (pdf/sum(pdf)).ravel()
+    return z, pdf
+
+class Descriptive(UnivariateOutliers):
+    
+    '''
+    Generate descriptive statistics, which include those that 
+    summarize the central tendency, dispersion and shape of a 
+    dataset’s distribution, excluding NaN.
     
     Parameters
     ----------
     methods : list of str, default=None
-        Method of capping outliers i.e. {"iqr", "mad", 
-        "grubb", "mae", "sigma", "gesd", "pct"}. If None, 
-        it defaults to all methods available, except "gesd". 
-        See UnivariateOutliers.__doc__ for more details.
+        Method of capping outliers i.e. {"iqr", "mad", "grubb", "mae", 
+        "sigma", "gesd", "pct"}. If None, it defaults to all methods 
+        available, except "gesd". See UnivariateOutliers.__doc__ for 
+        more details.
         
     plot_kwds : keywords
-        Keyword arguments to be passed to kernel density 
-        estimate plot <DescStatsPlot>.
+        Keyword arguments to be passed to kernel density estimate plot 
+        <DescStatsPlot>.
     
     Attributes
     ----------
@@ -1597,8 +2244,7 @@ class Descriptive(UnivariateOutliers, DescStatsPlot):
             kwds = __Getkwargs__(DescStatsPlot)
             keys = set(kwds).intersection(plot_kwds.keys())
             if len(keys)>0:
-                self.kwds = dict([(k,plot_kwds[k]) 
-                                  for k in keys])
+                self.kwds = dict([(k, plot_kwds[k]) for k in keys])
         else: self.kwds = dict()
 
     def fit(self, X):
@@ -1619,13 +2265,13 @@ class Descriptive(UnivariateOutliers, DescStatsPlot):
             See Descriptive.__str__.__doc__ for more details.
         
         num_info : pd.DataFrame
-            Summary statistics of Dataframe provided.
-            See Descriptive.__num__.__doc__ for more details.
+            Summary statistics of Dataframe provided. See Descriptive.
+            __num__.__doc__ for more details.
 
         References
         ----------
-        .. [1] https://www.itl.nist.gov/div898/handbook/eda/
-               section3/eda35b.htm
+        .. [1] https://www.itl.nist.gov/div898/handbook/eda/section3/
+               eda35b.htm
                
         '''
         # Convert `X` to pd.DataFrame
@@ -1640,8 +2286,7 @@ class Descriptive(UnivariateOutliers, DescStatsPlot):
         
         if len(numcols)>0: 
             self.__num__(X_num)
-            self.DescStatsPlot = \
-            DescStatsPlot(X, self.num_info_, **self.kwds)
+            self.X = X_num.copy()
         else: self.num_info = None
             
         if len(strcols)>0: self.__str__(X_str)
@@ -1666,11 +2311,11 @@ class Descriptive(UnivariateOutliers, DescStatsPlot):
             - "f_skewness" : Adjusted Fisher-Pearson
             - "g_skewness" : Galton skewness
             - "kurtosis"   : Fisher kurtosis
-            - "min"        : 0th percentile (minimum)
+            - "min"        : Minimum
             - "pct25"      : 25th percentile
             - "pct50"      : 50th percentile (median)
             - "pct75"      : 75th percentile
-            - "max"        : 100th percentile (maximum)
+            - "max"        : Maximum
             - "iqr"        : Interquartile range
             - "lower"      : Outlier lower bound
             - "upper"      : Outlier upper bound
@@ -1709,7 +2354,7 @@ class Descriptive(UnivariateOutliers, DescStatsPlot):
                          ("mean", np.mean(x)), 
                          ("std" , np.std(x)),
                          # Number of unique items and missings
-                         ("unique" , np.unique(x).shape[0]), 
+                         ("unique" , pd.Series(x).nunique()), 
                          ("missing", int(np.isnan(X[var]).sum())),
                          # Quartile and IQR
                          ("min"  , Q[0]), ("pct25", Q[1]), 
@@ -1728,14 +2373,14 @@ class Descriptive(UnivariateOutliers, DescStatsPlot):
             data.append(dict([(fld, getattr(info[key],fld)) 
                               for fld in info[key]._fields]))
         
-        self.num_info = pd.DataFrame(data)[num_fields]\
-        .set_index('variable')\
-        .rename(columns={"pct25":"25%",
-                         "pct50":"50%",
-                         "pct75":"75%",
-                         "f_skewness":"fisher skew",
-                         "g_skewness":"galton skew"})\
-        .sort_index().T
+        self.num_info = (pd.DataFrame(data)[num_fields]\
+                         .set_index('variable')\
+                         .rename(columns={"pct25": "25%",
+                                          "pct50": "50%",
+                                          "pct75": "75%",
+                                          "f_skewness": "fisher skew",
+                                          "g_skewness": "galton skew"})\
+                         .sort_index().T)
     
     def __str__(self, X:pd.DataFrame):
         
@@ -1757,12 +2402,66 @@ class Descriptive(UnivariateOutliers, DescStatsPlot):
         self.str_info = pd.DataFrame(info)[str_fields]\
         .set_index('variable').sort_index().T
         
-    def plotting(self, var, ax=None, xlim=None, y=None):
+    def plotting(self, var, bins="fd", ax=None, whis=3.0, 
+                 tight_layout=True, hist_kwds=None, plot_kwds=None, 
+                 show_title=True, show_stats=True, stats_format=None):
         
-        '''Using <DescStatsPlot> to plot univariate'''
-        self.DescStatsPlot.plotting(var, ax ,xlim, y)
-        plt.tight_layout()
+        '''
+        Plot descriptive statistics.
         
+        Parameters
+        ----------
+        var : str, default=None
+            Variable name in X.
+
+        bins : int or sequence of scalars or str, default=None
+            `bins` defines the method used to calculate the optimal bin 
+            width, as defined by <numpy.histogram>. If None, it defaults 
+            to "fd".
+
+        ax : Matplotlib axis object, default=None
+            Predefined Matplotlib axis. If None, `ax` is created with 
+            default figsize.
+
+        whis : float, default=3.0
+            It determines the reach of the whiskers to the beyond the 
+            first and third quartiles, which are Q1 - whis*IQR, and Q3 + 
+            whis*IQR, respectively. This applies to both coordinates and 
+            lower and upper bounds accordingly. If None, no bounds are
+            determined.
+
+        tight_layout : bool, default=True
+            If True, it adjusts the padding between and around subplots 
+            i.e. plt.tight_layout().
+
+        hist_kwds : keywords, default=None
+            Keyword arguments to be passed to "ax.hist".
+
+        plot_kwds : keywords, default=None
+            Keyword arguments to be passed to "ax.plot".
+
+        show_title : bool, default=True
+            If True, it shows plot title.
+
+        show_stats : bool, default=True
+            If True, it shows descriptive statistics of `var`.
+
+        stats_format : string formatter, default=None
+            String formatters (function) for statistical values. If None, 
+            it defaults to "{:,.3g}".format. This does not include 
+            "Skewness", and "Kurtosis".
+
+        Returns
+        -------
+        ax : Matplotlib axis object
+
+
+        '''
+        args = (self.X, var, bins, ax, whis, tight_layout, hist_kwds, 
+                plot_kwds, show_title, show_stats, stats_format)
+        ax = descriptive_plot(*args)
+        return ax
+
 def BoxPlot(y, x, ax=None, med_fmt=None, colors=None, 
             return_result=False):
     
@@ -1884,502 +2583,3 @@ def BoxPlot(y, x, ax=None, med_fmt=None, colors=None,
     
     if return_result: return ax, result
     else: return ax
-    
-class Compare2samp:
-    
-    '''
-    Compare two sets of sample by using Chi-Square test for 
-    homogeneity [1,2] and Kolmogorov-Smirnov [3,4] tests.
-    
-    versionadded:: 10-07-2021
-    
-    Parameters
-    ----------
-    bins : int, default=10
-        Number of Chi-Square bins to start off with.
-    
-    equal_width : bool, default=True
-        If True, it uses equal-width binning, otherwise 
-        equal-sample binning is used instead.
-        
-    max_category : int, default=100
-        If number of unique elements from column with "object" 
-        dtype, is less than or equal to max_category, its 
-        dtype will be converted to "category". max_category 
-        must be greater than or equal to 2.
-    
-    frac : float, default=0.01
-        It defines a minimum fraction (%) of expected samples 
-        per bin. A minimum number of samples resulted from
-        frac is 5.
-
-    References
-    ----------
-    .. [1] https://en.wikipedia.org/wiki/Goodness_of_fit
-    .. [2] https://courses.lumenlearning.com/wmopen-concepts-
-           statistics/chapter/test-of-homogeneity/
-    .. [3] https://en.wikipedia.org/wiki/Kolmogorov–Smirnov_test
-    .. [4] https://docs.scipy.org/doc/scipy/reference/generated/
-           scipy.stats.ks_2samp.html
-    
-    Attributes
-    ----------
-    result : collections.OrderedDict
-        The order of keys is arranged according to input
-        variable. Within each key, it contains "Stats" 
-        (collections.namedtuple) with following fields:
-        - "variable"    : Variable name
-        - "chi2_chisq"  : Chi-Square test statistic
-        - "chi2_df"     : Chi-Square degrees of freedom
-        - "chi2_pvalue" : Chi-Square test p-value
-        - "chi2_bins"   : Chi-Square bin edges
-        - "ks_stat"     : Kolmogorov-Smirnov test statistic 
-        - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
-        - "dtype"       : Data type
-
-    info : pd.DataFrame
-        Information table is comprised of:
-        - "variable"    : Variable name
-        - "chi2_chisq"  : Chi-Square test statistic
-        - "chi2_df"     : Chi-Square degrees of freedom
-        - "chi2_pvalue" : Chi-Square test p-value
-        - "chi2_bins"   : Number of Chi-Square bins
-        - "ks_stat"     : Kolmogorov-Smirnov test statistic
-        - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
-        - "dtype"       : Data type
-    
-    Examples
-    --------
-    >>> from sklearn.datasets import fetch_openml
-    >>> X, y = fetch_openml("titanic", version=1, 
-    ...                     as_frame=True, return_X_y=True)
-    
-    Take a random sample of items from an axis of object.
-    >>> random_X = X.sample(100).copy()
-    
-    Fit model
-    >>> model = Compare2samp(bins=10, equal_width=True, 
-    ...                      max_category=100).fit(X, random_X)
-    
-    Result
-    >>> model.result
-    
-    Summary result
-    >>> model.info
-    
-    '''
-    def __init__(self, bins=10, equal_width=True, max_category=100, frac=0.01):
-        
-        self.bins = bins
-        self.equal_width = equal_width
-        self.max_category = max_category
-        self.frac = min(np.fmax(frac, np.finfo("float32").eps), 0.9)
-    
-    def fit(self, X1, X2, use_X1=True):
-        
-        '''
-        Fit model.
-        
-        Parameters
-        ----------
-        X1, X2 : array-like or pd.DataFrame
-            Two DataFrames of sample observations, where their 
-            sample sizes can be different but they must have
-            the same number of features (columns).
-            
-        use_X1 : bool, default=True
-            If True, it uses X1, and X2 as expected and observed
-            samples, respectively, and vice versa when use_X1 is
-            False.
-    
-        Attributes
-        ----------
-        result : collections.OrderedDict
-            The order of keys is arranged according to input
-            variable. Within each key, it contains "Stats" 
-            (collections.namedtuple) with following fields:
-            - "variable"    : Variable name
-            - "chi2_chisq"  : Chi-Square test statistic
-            - "chi2_df"     : Chi-Square degrees of freedom
-            - "chi2_pvalue" : Chi-Square test p-value
-            - "chi2_bins"   : Chi-Square bin edges
-            - "ks_stat"     : Kolmogorov-Smirnov test statistic 
-            - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
-            - "dtype"       : Data type
-
-        info : pd.DataFrame
-            Information table is comprised of:
-            - "variable"    : Variable name
-            - "chi2_chisq"  : Chi-Square test statistic
-            - "chi2_df"     : Chi-Square degrees of freedom
-            - "chi2_pvalue" : Chi-Square test p-value
-            - "chi2_bins"   : Number of Chi-Square bins
-            - "ks_stat"     : Kolmogorov-Smirnov test statistic
-            - "ks_pvalue"   : Kolmogorov-Smirnov test p-value
-            - "dtype"       : Data type
-        
-        '''
-        # Convert `X` to pd.DataFrame
-        X1 = _to_DataFrame(X1).copy()
-        X2 = _to_DataFrame(X2).copy()
-        
-        # Assign to expected and observed samples
-        x_exp, x_obs = (X1, X2) if use_X1 else (X2, X1)
-        x_exp = column_dtype(x_exp, self.max_category)
-        x_obs = column_dtype(x_obs, self.max_category)
-        self.n_ = [x_exp.shape[0], x_obs.shape[0]]
-        n_min = max(int(self.frac * x_exp.shape[0]), 5)
-       
-        # Numeric and catigorical features from expected observation
-        cat_features = list(x_exp.select_dtypes(include="category"))
-        num_features = list(x_exp.select_dtypes(include=np.number))
-            
-        # Initialize parameters.
-        self.fields = ["chi2_chisq", "chi2_df", "chi2_pvalue", 
-                       "chi2_bins", "ks_stat", "ks_pvalue", "dtype"]
-        Stats = collections.namedtuple('Stats', self.fields)   
-        self.result = collections.OrderedDict()
-        
-        fields = ["f_exp", "f_obs", "type"]
-        Params = collections.namedtuple('Params', fields)
-        self.hist_data = collections.OrderedDict()
-
-        # ===== Numerical Features =====
-        for feat in num_features:
-        
-            data1 = x_exp[feat].values.copy()
-            data2 = x_obs[feat].values.copy()
-
-            # Calculate bin edges, given binning method.
-            chi2_bins = self.__bins__(data1, self.bins, self.equal_width)
-            chi2_bins = self.__leqx__(data1, chi2_bins, n_min)
-
-            # Frequency of expected and observed samples
-            f_exp = self.__freq__(data1, chi2_bins)
-            f_obs = self.__freq__(data2, chi2_bins)
-            f_exp = np.where(f_exp==0, np.finfo(float).eps, f_exp)
-
-            # Chi-Square test for goodness of fit.
-            chi2_chisq = ((f_obs-f_exp)**2/f_exp).sum()*100
-            chi2_df = max(len(chi2_bins)-2,1)
-            chi2_pvalue = 1-stats.chi2.cdf(chi2_chisq, df=chi2_df)
-
-            # Kolmogorov-Smirnov test for goodness of fit.
-            kwd = dict(alternative='two-sided', mode='auto')
-            ks_stat, ks_pvalue = stats.ks_2samp(data1, data2, **kwd)
-            
-            self.hist_data[feat] = Params(*(f_exp, f_obs, "number"))
-            self.result[feat] = Stats(*(chi2_chisq, chi2_df, chi2_pvalue, 
-                                        chi2_bins, ks_stat, ks_pvalue, 
-                                        data1.dtype))
-            
-        # ===== Categorical Features =====
-        # Keyword argument for OrdinalEncoder
-        kwds = dict(categories='auto', dtype=np.int32, unknown_value=-1,
-                    handle_unknown="use_encoded_value")
-        
-        # Fit and transform data.
-        encoder = OrdinalEncoder(**kwds).fit(x_exp[cat_features])
-        cat_exp = encoder.transform(x_exp[cat_features])
-        cat_obs = encoder.transform(x_obs[cat_features])
-        
-        for n,feat in enumerate(cat_features):
-            
-            data1 = cat_exp[:,n].copy()
-            data2 = cat_obs[:,n].copy()
-            
-            # Calculate bin edges, given binning method.
-            chi2_bins = self.__bins__(data1, max(data1)+1, self.equal_width)
-            chi2_bins = self.__leqx__(data1, chi2_bins, n_min)
-            
-            # Frequency of expected and observed samples
-            f_exp = self.__freq__(data1, chi2_bins, len(chi2_bins))
-            f_obs = self.__freq__(data2, chi2_bins, len(chi2_bins))
-            f_exp = np.where(f_exp==0, np.finfo(float).eps, f_exp)
-            
-            # Chi-Square test for goodness of fit.
-            chi2_chisq = ((f_obs-f_exp)**2/f_exp).sum()*100
-            chi2_df = max(len(chi2_bins)-2,1)
-            chi2_pvalue = 1-stats.chi2.cdf(chi2_chisq, df=chi2_df)
-            
-            # Change chi2_bins format 
-            # i.e. (Group(x), [element(x,1), .., element(x,n)])
-            index = np.digitize(np.arange(0, max(data1)+1), chi2_bins)
-            chi2_bins = [(i,list(encoder.categories_[n][index==i])) 
-                         for i in np.unique(index)]
-            
-            self.hist_data[feat] = Params(*(f_exp, f_obs, "category"))
-            self.result[feat] = Stats(*(chi2_chisq, chi2_df, chi2_pvalue, 
-                                        chi2_bins, np.nan, np.nan, 
-                                        "category"))
-        
-        self.__info__()
-        return self
-    
-    def __info__(self):
-        
-        '''self.info : pd.DataFrame'''
-        data = []
-        attr = lambda k,f : getattr(self.result[k],f)
-        for key in self.result.keys():
-            stats = [attr(key,fld) if fld!='chi2_bins' 
-                     else 0 for fld in self.fields]
-            data.append([key] + stats)
-        info = pd.DataFrame(data, columns=["variable"] + self.fields)
-        info['chi2_bins'] = info['chi2_df'] + 1
-        self.info = info.set_index("variable")
-      
-    def __freq__(self, x, bins, max_index=None):
-        
-        '''
-        Determine frequency (include np.nan). This function
-        uses np.digitize() to determine the indices of the bins 
-        to which each value in input array belongs. If any 
-        values in x are less than the minimum bin edge bins[0], 
-        they are indexed for bin 1. Whereas any values that are 
-        greater than the maximum bin edge bin[-1] or are np.nan, 
-        they are indexed for bin "len(bins)+1" or "max_index".
-        
-        '''
-        if max_index is None: max_index = len(bins)+1
-        indices = np.clip(np.digitize(x, bins), 1, max_index)
-        return np.array([sum(indices==n) 
-                         for n in range(1, max_index)])/len(x)
-        
-    def __bins__(self, x, bins, equal_width=True):
-        
-        '''
-        According to binning method (equal-width or equal-sample),
-        this function generates 1-dimensional and monotonic array 
-        of bins. The last bin edge is the maximum value in x plus 
-        np.finfo("float32").eps.
-        
-        '''
-        bins = np.fmax(bins, 2) + 1
-        if equal_width: 
-            args = (np.nanmin(x), np.nanmax(x), bins)
-            bins = np.linspace(*args)
-        elif equal_width==False:
-            q = np.linspace(0, 100, bins)
-            bins = np.unique(np.nanpercentile(x, q))
-        bins[-1] = bins[-1] + np.finfo("float32").eps
-        return bins
-        
-    def __leqx__(self, x, bins, n_min=5):
-    
-        '''
-        To ensure that the sample size is appropriate for the use 
-        of the test statistic, we need to ensure that frequency in 
-        each bin must be greater than "n_min". Bin is collasped to 
-        its immediate left bin if above condition is not met, except 
-        the first bin.
-        
-        '''
-        notnan = x[~np.isnan(x)]
-        while True:
-            leq5  = (np.histogram(notnan, bins)[0]<n_min)
-            index = np.fmax(np.argmax(leq5),1)
-            if sum(leq5)==0: return bins
-            else: bins = np.delete(bins, index)
-
-    def plotting(self, var, ax=None, colors=None, tight_layout=True, 
-                 decimal=0, expect_kwds=None, observe_kwds=None, 
-                 xticklabel_format=None, max_display=2):
-        
-        '''
-        Plot Chi-Square Goodness of Fit Test.
-
-        Parameters
-        ----------
-        var : str
-            Variable name in self.info (attribute).
-
-        ax : Matplotlib axis object, default=None
-            Predefined Matplotlib axis. If None, `ax` is created 
-            with default figsize.
-
-        colors : list of color-hex, default=None
-            Number of color-hex must be greater than 1. If None, 
-            it uses default colors from Matplotlib.
-
-        tight_layout : bool, default=True
-            If True, it adjusts the padding between and around 
-            subplots i.e. plt.tight_layout().
-            
-        decimal : int, default=0
-            Decimal places for annotation of value(s).
-            
-        expect_kwds : keywords, default=None
-            Keyword arguments of expected samples to be passed 
-            to "ax.bar".
-         
-        observe_kwds : keywords, default=None
-            Keyword arguments of observed samples to be passed 
-            to "ax.bar".
-        
-        xticklabel_format : string formatter, default=None
-            String formatters (function) for ax.xticklabels values. 
-            If None, it defaults to "{:,.2f}".format.
-        
-        max_display : int, default=1
-            Maximum number of categories to be displayed. This is
-            available only when dtype=="category".
-
-        Returns
-        -------
-        ax : Matplotlib axis object
-
-        '''
-        # Get values from self.hist_data
-        f_exp = self.hist_data[var].f_exp
-        f_obs = self.hist_data[var].f_obs
-        dtype = self.hist_data[var].type
-        data  = self.result[var]
-        bins  = data.chi2_bins
-        x = np.arange(len(f_exp))
-        
-        # x-ticklabels number format
-        if xticklabel_format is None: n_format = "{:,.2f}".format
-        else: n_format = xticklabel_format
-                
-        xticklabels = []
-        if dtype=="number":
-            
-            for n in np.arange(len(f_exp)):
-                if n < len(f_exp)-1: r = f"(<{n_format(bins[n+1])})"
-                else: r = f"(≥{n_format(bins[-1])})" + "\nor missing"
-                xticklabels.append(f"Group {n+1}" + "\n" + r)
-    
-        elif dtype=="category":
-            
-            for n,m in bins:
-                if max_display>0:
-                    # format = {"A","B",...(n)}
-                    n_set = [f'"{s}"' for s in np.array(m)[:max_display]]
-                    if len(m)>max_display: 
-                        n_set.append("…({:,.0f})".format(len(m)))
-                    xticklabels.append(f"Group {n}" + "\n{" + ",".join(n_set) + "}")
-                else: xticklabels.append(f"Group {n}" + "\n({:,.0f})".format(len(m)) )
-
-        # Create matplotlib.axes if ax is None.
-        width = np.fmax(len(f_exp)*0.8,6)
-        ax = self.__ax__(ax, (width, 4.3))
-
-        # Get default line color.
-        colors = self.__colors__(ax, colors, 2)
-        
-        num_format = ("{:,." + str(decimal) + "%}").format
-        anno_kwds = dict(xytext =(0,4), textcoords='offset points', 
-                         va='bottom', ha='center', fontsize=10, 
-                         fontweight='demibold')
-     
-        # Vertical bar (Expect).
-        kwds = dict(width=0.4, ec='k', alpha=0.9, color=colors[0], 
-                    label='Expect (n={:,.0f})'.format(self.n_[0]))
-        ax.bar(x-0.25, f_exp, **({**kwds, **expect_kwds} if 
-                                 expect_kwds is not None else kwds))
-        
-        # Annotation (Expect).
-        kwds = {**anno_kwds, **dict(color=colors[0])}
-        for xy in zip(x-0.25, f_exp): 
-            ax.annotate(num_format(min(xy[1],1)), xy, **kwds)
-            
-        # Vertical bar (Observe).   
-        kwds = dict(width=0.4, ec='k', alpha=0.9, color=colors[1], 
-                    label='Observe (n={:,.0f})'.format(self.n_[1]))    
-        ax.bar(x+0.25, f_obs, **({**kwds, **observe_kwds} if 
-                                 observe_kwds is not None else kwds))
-        
-        # Annotation (Observe).
-        kwds = {**anno_kwds, **dict(color=colors[1])}
-        for xy in zip(x+0.25, f_obs): 
-            ax.annotate(num_format(min(xy[1],1)), xy, **kwds)
-            
-        for spine in ["top", "left", "right"]:
-            ax.spines[spine].set_visible(False)
-        
-        # Plot title.
-        title  = "Variable : {}\n".format(var)  
-        pvalue = lambda v : "N/A" if np.isnan(v) else "{:,.0%}".format(v)
-        args   = (pvalue(data.chi2_pvalue), pvalue(data.ks_pvalue)) 
-        title += r"p-value ($\chi^{2}$, $KS$) : " + "({}, {})".format(*args)
-        ax.set_title(title, fontweight='demibold', fontsize=12)
-        
-        # Set labels.
-        ax.set_xticks(x)
-        ax.set_xticklabels(xticklabels)
-        ax.set_xlim(-0.5, len(f_exp)-0.5)
-        ax.set_yticks([])
-        ax.set_yticklabels('')
-        ax.set_ylim(0, max(max(f_exp), max(f_obs))/0.75)
-        ax.legend(loc=0)
-        if tight_layout: plt.tight_layout()
-        return ax
-    
-    def __ax__(self, ax, figsize):
-        
-        '''Private: create axis if ax is None'''
-        if ax is None: return plt.subplots(figsize=figsize)[1]
-        else: return ax
-        
-    def __colors__(self, ax, colors, n=10):
-        
-        '''Private: get default line color'''
-        if colors is not None: return colors
-        else: return [ax._get_lines.get_next_color() 
-                      for _ in range(n)]
-                    
-def column_dtype(X, max_category=100):
-    
-    '''
-    This function converts columns to best possible dtypes,
-    which are "float32", "int32" (boolean), "category", and
-    "object". However, it ignores columns, whose dtype is 
-    either np.datetime64 or np.timedelta64.
-    
-    Parameters
-    ----------
-    X : pd.DataFrame
-        Input array.
-    
-    max_category : int, default=100
-        If number of unique elements from column with "object" 
-        dtype, is less than or equal to max_category, its 
-        dtype will be converted to "category". max_category 
-        must be greater than or equal to 2.
-    
-    Returns
-    -------
-    Converted_X : pd.DataFrame
-    
-    '''
-    # Select columns, whose dtype is neither 
-    # datetimes, nor timedeltas.
-    exclude = [np.datetime64, np.timedelta64] 
-    columns = list(X.select_dtypes(exclude=exclude))
-    
-    if isinstance(max_category, int):
-        max_category = max(2, max_category)
-    else: max_category = 100
-    
-    # Replace pd.isnull() with np.nan
-    Converted_X = X.copy()
-    Converted_X.iloc[:,:] = np.where(X.isnull(), np.nan, X)
-    
-    for var in columns:
-        x = Converted_X[var].copy()
-        try:
-            float32 = x.astype("float32")
-            if np.isnan(float32).sum()==0:
-                int32 = x.astype("int32")
-                if (int32-float32).sum()==0: 
-                    Converted_X[var] = int32
-                else: Converted_X[var] = float32
-            else: Converted_X[var] = float32 
-        except:
-            objtype = x.astype("object")
-            n_unq = len(objtype.unique())
-            if n_unq<=max_category:
-                Converted_X[var] = x.astype(str).astype("category") 
-            else: Converted_X[var] = objtype
-    return Converted_X
