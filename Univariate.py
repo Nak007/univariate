@@ -1584,10 +1584,12 @@ class Compare2samp:
             # Frequency of expected and observed samples
             f_exp = self.__freq__(data1, chi2_bins)
             f_obs = self.__freq__(data2, chi2_bins)
-            f_exp = np.where(f_exp==0, np.finfo(float).eps, f_exp)
+            #f_exp = np.where(f_exp==0, np.finfo(float).eps, f_exp)
+            f_exp = np.where(f_exp==0, 0.5/len(data1), f_exp)
         # -------------------------------------------------------------
             # Chi-Square test for goodness of fit.
             chi2_chisq = ((f_obs-f_exp)**2/f_exp).sum()*100
+            chi2_chisq = min(chi2_chisq, 999) #<== limit
             chi2_df = max(len(chi2_bins)-2,1)
             chi2_pvalue = 1-stats.chi2.cdf(chi2_chisq, df=chi2_df)
         # -------------------------------------------------------------
