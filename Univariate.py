@@ -6,12 +6,11 @@ Univariate-related functions:
 [4] UnivariateOutliers
 [5] MatchDist
 [6] Descriptive
-[7] descriptive_plot
-[8] BoxPlot
-[9] Compare2samp
+[7] BoxPlot
+[8] Compare2samp
 
 Authors: Danusorn Sitdhirasdr <danusorn.si@gmail.com>
-versionadded:: 01-01-2022
+versionadded:: 05-03-2022
 
 '''
 import numpy as np, pandas as pd, time
@@ -41,7 +40,6 @@ __all__ = ["qq_plot",
            "UnivariateOutliers" ,
            "MatchDist", 
            "Descriptive",
-           "descriptive_plot",
            "BoxPlot", 
            "Compare2samp"]
 
@@ -294,7 +292,7 @@ def ks_test(x, dist="norm"):
     dist, params, dist_name = __ContDist__(dist)
     if params is None: 
         params = dist.fit(x)
-        cdf = dist(*param).cdf
+        cdf = dist(*params).cdf
     else: cdf = dist.cdf
     ks =  stats.kstest(x, cdf)
     return KsTest(statistic=ks.statistic,
@@ -679,7 +677,7 @@ class UnivariateOutliers():
         nonan = np.where(np.isnan(X),-np.inf, X)
         X0 = np.where(nonan > upper, upper, X0)
         self.capped_X = pd.DataFrame(X0, columns=usecols)
-        
+
 def __Valid__(X, min_n=10, raise_warning=True):
     
     '''
@@ -1484,25 +1482,6 @@ class Compare2samp:
         - "psi"         : Population Stability Index
         - "dtype"       : Data type
     
-    Examples
-    --------
-    >>> from sklearn.datasets import fetch_openml
-    >>> X, y = fetch_openml("titanic", version=1, as_frame=True, 
-    ...                     return_X_y=True)
-    
-    Take a random sample of items from an axis of object.
-    >>> random_X = X.sample(100).copy()
-    
-    Fit model
-    >>> model = Compare2samp(bins=10, equal_width=True, 
-    ...                      max_category=100).fit(X, random_X)
-    
-    Result
-    >>> model.result
-    
-    Summary result
-    >>> model.info
-    
     '''
     def __init__(self, bins=None, global_bins=10, equal_width=True, 
                  max_category=100, frac=0.01):
@@ -1743,9 +1722,9 @@ class Compare2samp:
                 if len(bins)<3: return bins
         else: return bins
 
-    def plotting(self, var, ax=None, colors=None, tight_layout=True, 
-                 decimal=0, expect_kwds=None, observe_kwds=None, 
-                 xticklabel_format=None, max_display=2):
+    def plotting(self, var, ax=None, colors=None, labels=None, 
+                 tight_layout=True, decimal=0, expect_kwds=None, 
+                 observe_kwds=None, xticklabel_format=None, max_display=1):
         
         '''
         Plot Chi-Square Goodness of Fit Test.
@@ -1762,6 +1741,10 @@ class Compare2samp:
         colors : list of color-hex, default=None
             Number of color-hex must be greater than 1. If None, it uses 
             default colors from Matplotlib.
+        
+        labels : list of str, default=None
+            A sequence of strings providing the labels for each class i.e. 
+            "0", and "1". If None, it defaults to ["Expect", "Observe"].
 
         tight_layout : bool, default=True
             If True, it adjusts the padding between and around subplots 
@@ -1791,7 +1774,7 @@ class Compare2samp:
         ax : Matplotlib axis object
 
         '''
-        args = (var, ax, colors, tight_layout, decimal, expect_kwds, 
+        args = (var, ax, colors, labels, tight_layout, decimal, expect_kwds, 
                 observe_kwds, xticklabel_format, max_display)
         ax = plotting_2samp_base(self, *args)
         return ax
@@ -1848,9 +1831,10 @@ def column_dtype(X, max_category=100):
             else: Converted_X[var] = objtype
     return Converted_X
 
-def plotting_2samp_base(compare, var, ax=None, colors=None, tight_layout=True, 
-                        decimal=0, expect_kwds=None, observe_kwds=None, 
-                        xticklabel_format=None, max_display=2):
+def plotting_2samp_base(compare, var, ax=None, colors=None, labels=None,
+                        tight_layout=True, decimal=0, expect_kwds=None, 
+                        observe_kwds=None, xticklabel_format=None, 
+                        max_display=2):
         
     '''
     Plot Chi-Square Goodness of Fit Test.
@@ -1870,7 +1854,11 @@ def plotting_2samp_base(compare, var, ax=None, colors=None, tight_layout=True,
     colors : list of color-hex, default=None
         Number of color-hex must be greater than 1. If None, it uses 
         default colors from Matplotlib.
-
+        
+    labels : list of str, default=None
+        A sequence of strings providing the labels for each class i.e. 
+        "0", and "1". If None, it defaults to ["Expect", "Observe"].
+        
     tight_layout : bool, default=True
         If True, it adjusts the padding between and around subplots 
         i.e. plt.tight_layout().
@@ -1899,7 +1887,6 @@ def plotting_2samp_base(compare, var, ax=None, colors=None, tight_layout=True,
     ax : Matplotlib axis object
 
     '''
-    
     # ===============================================================
     # Get values from self.hist_data
     var_list = list(compare.hist_data.keys())
@@ -1926,10 +1913,11 @@ def plotting_2samp_base(compare, var, ax=None, colors=None, tight_layout=True,
     anno_kwds = dict(xytext =(0,4), textcoords='offset points', 
                      va='bottom', ha='center', fontsize=13, 
                      fontweight='demibold')
+    if labels is None: labels = ["Expect", "Observe"]
     # ---------------------------------------------------------------
     # Vertical bar (Expect).
     kwds = dict(width=0.4, alpha=0.9, color=colors[0], 
-                label='Expect ({:,d})'.format(compare.n_[0]))
+                label='{} ({:,d})'.format(labels[0], compare.n_[0]))
     ax.bar(x-0.25, f_exp, **({**kwds, **expect_kwds} if 
                              expect_kwds is not None else kwds))
     # ---------------------------------------------------------------
@@ -1940,7 +1928,7 @@ def plotting_2samp_base(compare, var, ax=None, colors=None, tight_layout=True,
     # ---------------------------------------------------------------
     # Vertical bar (Observe).   
     kwds = dict(width=0.4, alpha=0.9, color=colors[1], 
-                label='Observe ({:,d})'.format(compare.n_[1]))    
+                label='{} ({:,d})'.format(labels[1], compare.n_[1]))    
     ax.bar(x+0.25, f_obs, **({**kwds, **observe_kwds} if 
                              observe_kwds is not None else kwds))
     # ---------------------------------------------------------------
@@ -2017,168 +2005,6 @@ def plotting_2samp_base(compare, var, ax=None, colors=None, tight_layout=True,
     # ===============================================================
     
     return ax
-
-def descriptive_plot(X, var, bins="fd", ax=None, whis=3.0, 
-                     tight_layout=True, hist_kwds=None, plot_kwds=None, 
-                     show_title=True, show_stats=True, stats_format=None):
-    
-    '''
-    Plot descriptive statistics.
-    
-    Parameters
-    ----------
-    X : pd.DataFrame
-        Input pd.DataFrame object.
-        
-    var : str, default=None
-        Variable name in X.
-            
-    bins : int or sequence of scalars or str, default=None
-        `bins` defines the method used to calculate the optimal bin 
-        width, as defined by <numpy.histogram>. If None, it defaults 
-        to "fd".
-        
-    ax : Matplotlib axis object, default=None
-        Predefined Matplotlib axis. If None, `ax` is created with 
-        default figsize.
-   
-    whis : float, default=3.0
-        It determines the reach of the whiskers to the beyond the 
-        first and third quartiles, which are Q1 - whis*IQR, and Q3 + 
-        whis*IQR, respectively. This applies to both coordinates and 
-        lower and upper bounds accordingly. If None, no bounds are
-        determined.
-
-    tight_layout : bool, default=True
-        If True, it adjusts the padding between and around subplots 
-        i.e. plt.tight_layout().
-
-    hist_kwds : keywords, default=None
-        Keyword arguments to be passed to "ax.hist".
-
-    plot_kwds : keywords, default=None
-        Keyword arguments to be passed to "ax.plot".
-        
-    show_title : bool, default=True
-        If True, it shows plot title.
-        
-    show_stats : bool, default=True
-        If True, it shows descriptive statistics of `var`.
-        
-    stats_format : string formatter, default=None
-        String formatters (function) for statistical values. If None, 
-        it defaults to "{:,.3g}".format. This does not include 
-        "Skewness", and "Kurtosis".
-        
-    Returns
-    -------
-    ax : Matplotlib axis object
-
-    '''
-
-    # ===============================================================
-    if var not in list(X):
-        raise ValueError(f"var must be in {list(X)}. "
-                         f"Got {var} instead.")
-    x = X.loc[X[var].notna(), var].values.copy()
-    # Create matplotlib.axes if ax is None.
-    if ax is None: ax = plt.subplots(figsize=(6.5, 4))[1] 
-    # ---------------------------------------------------------------
-    kwds = dict(facecolor="#f1f2f6", edgecolor="grey", linewidth=0.8)
-    if hist_kwds is None: hist_kwds = kwds
-    else: hist_kwds = {**kwds, **hist_kwds}
-    n,_,_ = ax.hist(x, bins, **{**hist_kwds,
-                                **{"label":"Undefined"}})
-    # ---------------------------------------------------------------
-    bandwidth = np.diff(np.histogram(x, bins=bins)[1])[1]
-    z, pdf = __kde__(x, {"bandwidth": bandwidth})
-    kwds = dict(color="#3742fa", linewidth=2, linestyle="--")
-    if plot_kwds is None: plot_kwds = kwds
-    else: plot_kwds = {**kwds, **plot_kwds}    
-    scale = max(n) / max(pdf)   
-    ax.plot(z, pdf*scale, **{**plot_kwds, **{"label":"PDF"}})
-    # ===============================================================
-
-    # Set other attributes         
-    # ===============================================================
-    if show_title:
-        s = (f"Variable : {var}\n" + 'N = {:,d}, '.format(len(x)) + 
-             "Missing = {:.1%}".format(1 - len(x)/len(X)))
-        props = dict(boxstyle='square', facecolor='none', alpha=0)
-        ax.text(0, 1.01, s, transform=ax.transAxes, fontsize=13,
-                va='bottom', ha="left", bbox=props)
-    # ---------------------------------------------------------------
-    # Percentile, and Galton skewness
-    if stats_format is None: stats_format = "{:,.3g}".format
-    mean  = f"Mean = {stats_format(np.mean(x))}"
-    stdev = f"Stdev = {stats_format(np.std(x))}"
-    skewness = "Skewness = {:,.2f}".format(stats.skew(x))
-    kurtosis = "Kurtosis = {:,.2f}".format(stats.kurtosis(x))
-    Q = np.percentile(x, np.linspace(0, 100, 5))
-    q = zip(["Min", "25%", "50%", "75%", "Max"], Q)
-    pct = "\n".join([s + " = " + stats_format(v) for s,v in q])
-    s = ("\n".join((mean, stdev)) + "\n" + pct + "\n" + 
-         "\n".join((skewness, kurtosis)))
-    # ---------------------------------------------------------------
-    if show_stats:
-        bbox = dict(boxstyle='round', facecolor='white', 
-                    edgecolor="black", pad=0.4, linewidth=0.5)
-        kwds = dict(s=s, transform=ax.transAxes, fontsize=13, 
-                    va='top', ha='left', bbox=bbox)
-        text = ax.text(0.01, 0.95, **kwds)
-    # ---------------------------------------------------------------
-        x_min, x_max = ax.get_xlim()
-        width  = (x_max - x_min)
-        render = plt.gcf().canvas.get_renderer()
-        ax_box = ax.get_window_extent(renderer=render) 
-        tx_box = text.get_window_extent(renderer=render)
-        offset = (ax_box.width - tx_box.width) / ax_box.width
-    # ---------------------------------------------------------------   
-        patches = [ax.get_children()[0]] * 7
-        legend  = ax.legend(patches, ["x" * 12] * 10, loc='best', 
-                            prop={'size':13})
-        x0  = legend.get_window_extent(renderer=render).x0
-        ax.legend().remove()
-        mid_pt  = ax_box.width/2 + ax_box.x0
-        if mid_pt <= x0: 
-            text.remove()
-            ax.text(offset+0.01, 0.95, **kwds)
-    # ---------------------------------------------------------------  
-    if whis is not None:
-        iqr = (Q[3] - Q[1]) * whis
-        ax.set_xlim(np.fmax(Q[1] - iqr, min(x)), 
-                    np.fmin(Q[3] + iqr, max(x))) 
-    # ---------------------------------------------------------------
-    for spine in ["top", "left", "right"]:
-        ax.spines[spine].set_visible(False)
-    ax.yaxis.set_visible(False)
-    ax.patch.set_alpha(0)
-    y_min, y_max = ax.get_ylim()
-    ax.set_ylim(y_min, y_max/0.85)
-    ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(6))
-    ax.tick_params(axis='both', labelsize=11)
-    # ---------------------------------------------------------------
-    args = (ax.transAxes, ax.transAxes)
-    transform = transforms.blended_transform_factory(*args)
-    ax.text(1.01, 0, "x", fontsize=13, va='center', ha="left", 
-            transform=transform)
-    if tight_layout: plt.tight_layout()
-    # ===============================================================
-
-    return ax
-
-def __kde__(x, kernel_kwds=None):
-
-    '''Private function: Kernel Density Estimator'''
-    default_kwds = {"bandwidth": 0.2, "kernel": 'gaussian'}
-    if kernel_kwds is not None: default_kwds.update(kernel_kwds)
-    kde = KernelDensity(**default_kwds).fit(x.reshape(-1,1))
-
-    # score_samples returns the log of the probability density
-    z   = np.linspace(min(x), max(x), 101)
-    pdf = np.exp(kde.score_samples(z.reshape(-1,1)))
-    pdf = (pdf/sum(pdf)).ravel()
-    return z, pdf
 
 class Descriptive(UnivariateOutliers):
     
@@ -2402,9 +2228,9 @@ class Descriptive(UnivariateOutliers):
         self.str_info = pd.DataFrame(info)[str_fields]\
         .set_index('variable').sort_index().T
         
-    def plotting(self, var, bins="fd", ax=None, whis=3.0, 
+    def plotting(self, var,  bins="fd", ax=None, colors=None, whis=3.0, 
                  tight_layout=True, hist_kwds=None, plot_kwds=None, 
-                 show_title=True, show_stats=True, stats_format=None):
+                 stats_format=None):
         
         '''
         Plot descriptive statistics.
@@ -2423,6 +2249,11 @@ class Descriptive(UnivariateOutliers):
             Predefined Matplotlib axis. If None, `ax` is created with 
             default figsize.
 
+        colors : list of color-hex, default=None
+            Number of color-hex must be greater than or equal to 2 i.e. 
+            ["Probability Density Function", "Box plot"]. If None, it 
+            uses default colors from Matplotlib. 
+
         whis : float, default=3.0
             It determines the reach of the whiskers to the beyond the 
             first and third quartiles, which are Q1 - whis*IQR, and Q3 + 
@@ -2440,27 +2271,237 @@ class Descriptive(UnivariateOutliers):
         plot_kwds : keywords, default=None
             Keyword arguments to be passed to "ax.plot".
 
-        show_title : bool, default=True
-            If True, it shows plot title.
-
-        show_stats : bool, default=True
-            If True, it shows descriptive statistics of `var`.
-
         stats_format : string formatter, default=None
             String formatters (function) for statistical values. If None, 
             it defaults to "{:,.3g}".format. This does not include 
-            "Skewness", and "Kurtosis".
+            "Skewness".
 
         Returns
         -------
         ax : Matplotlib axis object
 
-
         '''
-        args = (self.X, var, bins, ax, whis, tight_layout, hist_kwds, 
-                plot_kwds, show_title, show_stats, stats_format)
-        ax = descriptive_plot(*args)
+        kwds = dict(bins=bins, ax=ax, colors=colors, whis=whis, 
+                    tight_layout=tight_layout, hist_kwds=hist_kwds, 
+                    plot_kwds=plot_kwds, stats_format=stats_format)
+        ax = desc_plot_base(self.X, var, **kwds)
         return ax
+
+def desc_plot_base(X, var, bins="fd", ax=None, colors=None, whis=3.0, 
+                   tight_layout=True, hist_kwds=None, plot_kwds=None, 
+                   stats_format=None):
+    
+    '''
+    Plot descriptive statistics.
+    
+    Parameters
+    ----------
+    X : pd.DataFrame
+        Input pd.DataFrame object.
+        
+    var : str
+        Variable name in X.
+            
+    bins : int or sequence of scalars or str, default=None
+        `bins` defines the method used to calculate the optimal bin 
+        width, as defined by <numpy.histogram>. If None, it defaults 
+        to "fd".
+        
+    ax : Matplotlib axis object, default=None
+        Predefined Matplotlib axis. If None, `ax` is created with 
+        default figsize.
+        
+    colors : list of color-hex, default=None
+        Number of color-hex must be greater than or equal to 2 i.e. 
+        ["Probability Density Function", "Box plot"]. If None, it 
+        uses default colors from Matplotlib. 
+   
+    whis : float, default=3.0
+        It determines the reach of the whiskers to the beyond the 
+        first and third quartiles, which are Q1 - whis*IQR, and Q3 + 
+        whis*IQR, respectively. This applies to both coordinates and 
+        lower and upper bounds accordingly. If None, no bounds are
+        determined.
+
+    tight_layout : bool, default=True
+        If True, it adjusts the padding between and around subplots 
+        i.e. plt.tight_layout().
+
+    hist_kwds : keywords, default=None
+        Keyword arguments to be passed to "ax.hist".
+
+    plot_kwds : keywords, default=None
+        Keyword arguments to be passed to "ax.plot".
+        
+    stats_format : string formatter, default=None
+        String formatters (function) for statistical values. If None, 
+        it defaults to "{:,.3g}".format. This does not include 
+        "Skewness".
+        
+    Returns
+    -------
+    ax : Matplotlib axis object
+
+    '''
+    # ===============================================================
+    if var not in list(X):
+        raise ValueError(f"var must be in {list(X)}. "
+                         f"Got {var} instead.")
+    x = X.loc[X[var].notna(), var].values.copy()
+    # Create matplotlib.axes if ax is None.
+    if ax is None: ax = plt.subplots(figsize=(7, 4.8))[1] 
+    colors = ([ax._get_lines.get_next_color() for n in range(2)] 
+              if colors is None else colors)
+    # ---------------------------------------------------------------
+    # Calculate `bin_edges`.
+    dx = float(np.diff(np.percentile(x, q=[100,0])))*0.01
+    amin, amax = min(x)-dx, max(x)+dx
+    bin_edges = np.histogram_bin_edges(x, bins, range=(amin,amax)) 
+    # ---------------------------------------------------------------
+    kwds = dict(facecolor="#f1f2f6", edgecolor="grey", 
+                linewidth=0.8, alpha=0.5)
+    if hist_kwds is None: hist_kwds = kwds
+    else: hist_kwds = {**kwds, **hist_kwds} 
+    n, _,_ = ax.hist(x, bin_edges, **{**hist_kwds, **{"zorder":0}})
+    ax.axhline(0, lw=1, color="k", zorder=1)
+    # ---------------------------------------------------------------
+    bandwidth = np.diff(bin_edges)[0]
+    z, pdf = __kde__(x, {"bandwidth": bandwidth})
+    kwds = dict(color=colors[0], linewidth=2, linestyle="-")
+    if plot_kwds is None: plot_kwds = kwds
+    else: plot_kwds = {**kwds, **plot_kwds}    
+    scale = max(n) / max(pdf)  
+    scaled_pdf = pdf*scale
+    ax.plot(z, scaled_pdf, **{**plot_kwds, **{"zorder":2}})
+    # ---------------------------------------------------------------
+    # Minimum and maximum of x
+    if stats_format is None: stats_format = "{:,.3g}".format
+    args = (ax.transAxes, ax.transAxes)
+    transform = transforms.blended_transform_factory(*args)
+    s = [r"N = {:,.5g}".format(len(x)),
+         r"min = {}".format(stats_format(np.min(x))),
+         r"max = {}".format(stats_format(np.max(x))),
+         r"skewness = {:+,.2f}".format(stats.skew(x))]
+    ax.text(0, -0.1, ", ".join(s), fontsize=13, 
+            va='top', ha="left", transform=transform)
+    # ---------------------------------------------------------------
+    # Set y-axis for histogram.
+    scale = 0.65
+    y_min, y_max = ax.get_ylim()
+    y_max/= 0.9
+    y_min = y_max - (y_max - y_min)/scale
+    ax.set_ylim(y_min, y_max)
+    # ---------------------------------------------------------------
+    # Draw mean of `x` line.
+    ax.axvline(np.mean(x), ymin=1-scale, ymax=0.93, color=colors[0], 
+               linewidth=1, linestyle="--")
+    args = (ax.transData, ax.transAxes)
+    transform = transforms.blended_transform_factory(*args)
+    s = [r"$\bar{x}$ = " , stats_format(np.mean(x)), 
+         r", $\sigma$ = ", stats_format(np.std(x))]
+    ax.text(np.mean(x), 1, "".join(s), fontsize=13, va='top', 
+            ha="center", transform=transform)
+    # ---------------------------------------------------------------
+    mean = np.mean(x)
+    stdv = np.std(x)
+    n_max = np.floor((max(x) - mean)/stdv)
+    n_min = np.floor((mean - min(x))/stdv)
+    # Coordinates of every standard deviation away from mean.
+    x_stdv = np.r_[mean - np.cumsum(np.full(int(n_min), stdv)), 
+                   mean + np.cumsum(np.full(int(n_max), stdv))]
+    y_stdv = np.interp(x_stdv, xp=z, fp=scaled_pdf)
+    for nx,ny in zip(x_stdv, y_stdv): 
+        ax.plot([nx]*2, [0,ny], lw=0.8, color=colors[0], 
+                solid_capstyle="round", solid_joinstyle="round")
+    # ===============================================================
+
+    # Make a box and whisker plot.
+    # ===============================================================
+    twx_ax = ax.twinx()
+    kwds = {0 : dict(widths=0.8 , showfliers=False, 
+                     notch=False, vert=False),
+            1 : dict(color=colors[1], linewidth=1, linestyle="--"), 
+            2 : dict(color=colors[1], linewidth=2)}
+    boxplot = twx_ax.boxplot(x, **kwds[0], zorder=0,
+                             medianprops =kwds[1], boxprops=kwds[2], 
+                             whiskerprops=kwds[2], capprops=kwds[2])
+    # ---------------------------------------------------------------
+    # Set y-axis for boxplot.   
+    y_min, y_max = twx_ax.get_ylim()
+    y_min = 0.1
+    y_max = (1.8 - y_min) / (1-scale)
+    twx_ax.set_ylim(y_min, y_max)
+    # ---------------------------------------------------------------
+    Q2 = boxplot['medians'][0].get_xdata()[0]
+    left  = boxplot['whiskers'][0].get_xdata()
+    right = boxplot['whiskers'][1].get_xdata()
+    Q1, Q1_iqr = max(left) , min(left)
+    Q3, Q3_iqr = min(right), max(right)
+    Q1_pct = stats.percentileofscore(x, Q1_iqr, kind="strict")
+    Q3_pct = stats.percentileofscore(x, Q3_iqr, kind="strict")
+    Q1_pct = "\n(P{:d})".format(int(Q1_pct))
+    Q3_pct = "\n(P{:d})".format(int(Q3_pct))
+    # ---------------------------------------------------------------
+    default = dict(textcoords='offset points', fontsize=13,
+                   bbox=dict(facecolor="w", pad=0, edgecolor='none'),
+                   arrowprops = dict(arrowstyle = "-"))
+    kwds = {"Q2" : dict(xytext=(0,-10), ha="center", va="top"), 
+            "Q3" : dict(xytext=(15,15), ha="left", va="bottom"), 
+            "Q3*": dict(xytext=(10,0), ha="left", va="center"),
+            "Q1" : dict(xytext=(-15,15), ha="right", va="bottom"), 
+            "Q1*": dict(xytext=(-10,0), ha="right", va="center")}
+    for key in kwds.keys(): kwds[key] = {**kwds[key],**default}
+    args = {"Q2" : (stats_format(Q2), (Q2,0.6)), 
+            "Q3" : (stats_format(Q3), (Q3,1.0)), 
+            "Q3*": (stats_format(Q3_iqr) + Q3_pct, (Q3_iqr,1)),
+            "Q1" : (stats_format(Q1), (Q1,1.0)), 
+            "Q1*": (stats_format(Q1_iqr) + Q1_pct, (Q1_iqr,1))}  
+    # ---------------------------------------------------------------
+    twx_ax.annotate(*args['Q2'], **kwds["Q2"])
+    if Q1 < Q2: twx_ax.annotate(*args['Q1'], **kwds['Q1'])
+    if Q3 > Q2: twx_ax.annotate(*args['Q3'], **kwds['Q3'])
+    if Q1_iqr < Q1: twx_ax.annotate(*args['Q1*'], **kwds['Q1*'])
+    if Q3_iqr > Q3: twx_ax.annotate(*args['Q3*'], **kwds['Q3*'])
+    # ===============================================================
+
+    # Set other attributes         
+    # ===============================================================
+    if whis is not None:
+        Q = np.percentile(x, np.linspace(0,100,5))
+        iqr = (Q[3] - Q[1]) * whis
+        upper = np.fmin(Q[3] + iqr, max(x))
+        lower = np.fmax(Q[1] - iqr, min(x))
+        dx = (upper - lower) * 0.01
+        ax.set_xlim(lower-dx, upper+dx) 
+    # ---------------------------------------------------------------
+    for spine in ["top", "left", "right"]:
+        ax.spines[spine].set_visible(False)
+        twx_ax.spines[spine].set_visible(False)
+    # ---------------------------------------------------------------   
+    ax.yaxis.set_visible(False)
+    twx_ax.yaxis.set_visible(False)
+    ax.patch.set_alpha(0)
+    twx_ax.patch.set_alpha(0)
+    # ---------------------------------------------------------------
+    ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(6))
+    ax.tick_params(axis='x', labelsize=12)
+    if tight_layout: plt.tight_layout()
+    # ===============================================================
+
+    return ax
+
+def __kde__(x, kernel_kwds=None):
+
+    '''Private function: Kernel Density Estimator'''
+    default_kwds = {"bandwidth": 0.2, "kernel": 'gaussian'}
+    if kernel_kwds is not None: default_kwds.update(kernel_kwds)
+    kde = KernelDensity(**default_kwds).fit(x.reshape(-1,1))
+
+    # score_samples returns the log of the probability density
+    z   = np.linspace(min(x), max(x), 101)
+    pdf = np.exp(kde.score_samples(z.reshape(-1,1)))
+    pdf = (pdf/sum(pdf)).ravel()
+    return z, pdf
 
 def BoxPlot(y, x, ax=None, med_fmt=None, colors=None, 
             return_result=False):
