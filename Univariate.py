@@ -2070,6 +2070,7 @@ class Descriptive(UnivariateOutliers):
         if methods is None: 
             self.methods = ["pct", "sigma", "iqr", 
                             "grubb", "mad" , "mae"]
+        else: self.methods = methods
         
         if plot_kwds is not None:
             kwds = __Getkwargs__(DescStatsPlot)
