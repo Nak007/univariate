@@ -438,7 +438,7 @@ class UnivariateOutliers():
 
     Parameters
     ----------
-    method : list of str, default=None
+    methods : list of str, default=None
         Method of capping outliers i.e. {'iqr', 'mad', 'grubb', 'mae', 
         'sigma', 'gesd', 'pct'}. If None, it defaults to all methods 
         available.
